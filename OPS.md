@@ -36,8 +36,11 @@ Cloudflare Tunnel
 ## 2. 啟動 / 停止
 
 ### 啟動 HTTP server（常用）
+`MCP_API_TOKEN` 必須先設定且不可為空白；未設定時 `server_http.py` 會拒絕啟動，避免無防護 HTTP 介面進入監聽。
+
 ```cmd
 cd C:\Users\EdgarsTool\Projects\mcp-handcraft
+set MCP_API_TOKEN=replace-with-a-long-random-token
 run_http.cmd
 ```
 

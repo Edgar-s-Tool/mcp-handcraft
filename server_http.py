@@ -37,7 +37,19 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 # ── Secrets（由 Doppler 注入）─────────────────────────────────────────────────
 NOTION_API_KEY = os.getenv("NOTION_API_KEY", "")
-API_TOKEN = os.getenv("MCP_API_TOKEN", "")
+API_TOKEN=os.getenv("MCP_API_TOKEN", "")
+MCP_API_TOKEN_REQUIRED_MESSAGE = (
+    "MCP_API_TOKEN is required and must be a non-empty string. Refusing to start."
+)
+
+
+def validate_mcp_api_token(token: str | None = None) -> str:
+    """Return a valid MCP API token or raise ValueError for unsafe startup."""
+    candidate = API_TOKEN if token is None else token
+    if candidate is None or not candidate.strip():
+        raise ValueError(MCP_API_TOKEN_REQUIRED_MESSAGE)
+    return candidate
+
 
 CODEX_CMD = r"C:\Users\EdgarsTool\AppData\Roaming\npm\codex.cmd"
 CLAUDE_CMD = shutil.which("claude") or "claude"
@@ -1383,6 +1395,12 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
 # ─── 主程式 ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    try:
+        validate_mcp_api_token()
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
     server = ThreadingHTTPServer(("0.0.0.0", PORT), MCPHTTPHandler)
     log(f"handcraft-mcp HTTP server starting")
     log(f"Protocol : {PROTOCOL_VERSION}")

@@ -38,6 +38,15 @@ claude auth login
 
 ## HTTP 版注意事項
 
+- `server_http.py` 啟動前必須有非空白的 `MCP_API_TOKEN`。
+- 若 `MCP_API_TOKEN` 未設定、空字串或只有空白，HTTP server 會 fail-fast，不會進入監聽狀態。
+- 最小啟動範例：
+
+```powershell
+$env:MCP_API_TOKEN = "replace-with-a-long-random-token"
+py -3 server_http.py
+```
+
 - `server_http.py` 目前預設會在 `90` 秒內等 agent 回覆。
 - 這是為了避免 Cloudflare Tunnel 一類的 HTTP 代理先超時，外面只看到空白或中斷。
 - 若要改長一點，可設定環境變數 `MCP_AGENT_TIMEOUT_SECONDS`。

@@ -2,6 +2,7 @@
 
 import subprocess
 import unittest
+from unittest.mock import patch
 
 import server_http
 from server_http import (
@@ -17,7 +18,46 @@ from server_http import (
     handle_tools_list,
     list_jobs,
     update_job,
+    validate_mcp_api_token,
 )
+
+
+class ServerHttpStartupTokenTests(unittest.TestCase):
+    def test_validate_mcp_api_token_accepts_non_empty_value(self):
+        self.assertEqual("secret", validate_mcp_api_token("secret"))
+
+    def test_validate_mcp_api_token_rejects_missing_value(self):
+        with self.assertRaisesRegex(ValueError, server_http.MCP_API_TOKEN_REQUIRED_MESSAGE):
+            validate_mcp_api_token(None)
+
+    def test_validate_mcp_api_token_rejects_empty_value(self):
+        with self.assertRaisesRegex(ValueError, server_http.MCP_API_TOKEN_REQUIRED_MESSAGE):
+            validate_mcp_api_token("")
+
+    def test_validate_mcp_api_token_rejects_whitespace_value(self):
+        with self.assertRaisesRegex(ValueError, server_http.MCP_API_TOKEN_REQUIRED_MESSAGE):
+            validate_mcp_api_token("   \t\n")
+
+    def test_main_exits_before_server_initialization_when_token_missing(self):
+        with patch.object(server_http, "API_TOKEN", ""), \
+             patch.object(server_http, "ThreadingHTTPServer") as server_cls:
+            with self.assertRaises(SystemExit) as ctx:
+                server_http.main()
+
+        self.assertEqual(1, ctx.exception.code)
+        server_cls.assert_not_called()
+
+    def test_main_starts_server_when_token_is_valid(self):
+        with patch.object(server_http, "API_TOKEN", "secret"), \
+             patch.object(server_http, "ThreadingHTTPServer") as server_cls:
+            server = server_cls.return_value
+            server.serve_forever.side_effect = KeyboardInterrupt
+
+            server_http.main()
+
+        server_cls.assert_called_once()
+        server.serve_forever.assert_called_once()
+        server.server_close.assert_called_once()
 
 
 def tool_text(response):
