@@ -1,0 +1,27 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link "Slack" [ref=e5] [cursor=pointer]:
+        - /url: https://slack.com
+        - img "Slack" [ref=e6]
+    - generic [ref=e9]:
+      - generic [ref=e11]:
+        - heading "看來你是第一次使用 Slack" [level=1] [ref=e12]
+        - paragraph [ref=e13]: edgar@edgarbeyourself.com 並沒有任何邀請或 Slack 帳號。如果你的團隊還沒有使用 Slack，你可以為他們建立工作空間。
+      - link "建立工作空間" [ref=e14] [cursor=pointer]:
+        - /url: /get-started?entry_point=redirect_flow#
+        - generic [ref=e15]: 建立工作空間
+      - button "試試其他電子郵件" [ref=e16] [cursor=pointer]
+    - contentinfo [ref=e19]:
+      - link "隱私權與條款" [ref=e20] [cursor=pointer]:
+        - /url: /intl/zh-tw/legal
+      - link "聯絡我們" [ref=e21] [cursor=pointer]:
+        - /url: /intl/zh-tw/help/requests/new
+      - link "變更地區" [ref=e23] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e24]: 
+        - text: 變更地區
+        - generic [ref=e25]: 
+  - generic [ref=e26]:
+    - alert [ref=e27]
+    - log [ref=e28]

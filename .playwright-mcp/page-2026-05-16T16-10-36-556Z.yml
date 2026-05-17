@@ -1,0 +1,50 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - navigation "全域" [ref=e7]:
+      - list [ref=e9]:
+        - listitem [ref=e10]:
+          - link "Apple" [ref=e11] [cursor=pointer]:
+            - /url: https://www.apple.com/tw/
+            - generic:
+              - img
+            - generic: Apple
+    - generic "Apple 帳號" [ref=e13]:
+      - navigation [ref=e14]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Apple 帳號
+          - generic [ref=e20]:
+            - list:
+              - listitem [ref=e21]:
+                - generic "登入" [ref=e22]:
+                  - text: 登入
+                  - generic [ref=e23]: 登入
+  - generic [ref=e37]:
+    - heading "使用 Apple 帳號登入「Slack」" [level=1] [ref=e39]
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e47]:
+          - textbox "電子郵件地址或電話號碼" [active] [ref=e48]
+          - generic: 電子郵件地址或電話號碼
+        - textbox [ref=e49]
+        - generic: 密碼
+        - paragraph [ref=e55]:
+          - text: 在設定「使用 Apple 登入」時，Apple 可能會使用你與 Apple 以及此裝置互動的相關資訊，以協助防範詐騙。
+          - link "查看你資料的管理方式⋯ 在新視窗中開啟。" [ref=e56] [cursor=pointer]:
+            - /url: https://www.apple.com/privacy/
+            - text: 查看你資料的管理方式⋯
+            - generic [ref=e57]: 在新視窗中開啟。
+      - generic [ref=e58]:
+        - generic [ref=e60]:
+          - button "繼續" [disabled]:
+            - generic: 繼續
+        - generic [ref=e61]:
+          - button "使用 iPhone 登入" [ref=e63] [cursor=pointer]:
+            - generic [ref=e64]: 使用 iPhone 登入
+          - paragraph [ref=e67]: 需要安裝 iOS 17 或以上版本的裝置。
+  - contentinfo "Apple Footer" [ref=e70]:
+    - generic [ref=e71]:
+      - heading "Apple Footer" [level=2] [ref=e72]
+      - generic [ref=e74]:
+        - generic [ref=e75]: Copyright © 2026 Apple Inc. 保留一切權利。
+        - link "隱私權政策" [ref=e77] [cursor=pointer]:
+          - /url: "\nhttps://www.apple.com/tw/legal/privacy/"

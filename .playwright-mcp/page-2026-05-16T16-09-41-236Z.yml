@@ -1,0 +1,54 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - progressbar [ref=e6]
+      - main [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e17]:
+            - generic [ref=e18]:
+              - img [ref=e20]
+              - generic [ref=e25]: 使用 Google 帳戶登入
+            - img "Slack" [ref=e26]
+          - generic [ref=e27]:
+            - heading "登入" [level=1] [ref=e28]
+            - generic [ref=e30]:
+              - text: 繼續使用「
+              - button "Slack" [ref=e31] [cursor=pointer]
+              - text: 」
+        - generic [ref=e34]:
+          - generic [ref=e39]:
+            - generic [ref=e44]:
+              - textbox "電子郵件地址或電話號碼" [active] [ref=e45]: edgar_wang0530@icloud.com
+              - generic: 電子郵件地址或電話號碼
+            - button "忘記電子郵件地址？" [ref=e49] [cursor=pointer]
+          - generic [ref=e52]:
+            - text: 使用前，請先詳閱「Slack」的《
+            - link "隱私權政策" [ref=e53] [cursor=pointer]:
+              - /url: https://slack.com/privacy-policy
+            - text: 》及《
+            - link "服務條款" [ref=e54] [cursor=pointer]:
+              - /url: https://slack.com/terms-of-service/user
+            - text: 》。
+        - generic [ref=e56]:
+          - button "下一步" [ref=e60]:
+            - generic [ref=e63]: 下一步
+          - button "建立帳戶" [ref=e68]:
+            - generic [ref=e71]: 建立帳戶
+    - contentinfo [ref=e75]:
+      - combobox "變更語言 繁體中文" [ref=e79] [cursor=pointer]:
+        - generic:
+          - generic: 繁體中文
+        - generic:
+          - img
+      - list [ref=e81]:
+        - listitem [ref=e82]:
+          - link "說明" [ref=e83] [cursor=pointer]:
+            - /url: https://support.google.com/accounts?hl=zh-TW&p=account_iph
+        - listitem [ref=e84]:
+          - link "隱私權設定" [ref=e85] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=TW&hl=zh-TW&privacy=true
+        - listitem [ref=e86]:
+          - link "條款" [ref=e87] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=TW&hl=zh-TW
+  - iframe [ref=e88]:
+    

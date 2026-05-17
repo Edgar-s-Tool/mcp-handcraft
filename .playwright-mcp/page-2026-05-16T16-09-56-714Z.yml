@@ -1,0 +1,53 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - progressbar [ref=e6]
+    - main [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e17]:
+          - generic [ref=e18]:
+            - img [ref=e20]
+            - generic [ref=e25]: 使用 Google 帳戶登入
+          - img "Slack" [ref=e26]
+        - generic [ref=e27]:
+          - heading "您即將重新登入「Slack」" [level=1] [ref=e28]
+          - link "目前選取的是 edgar@edgarbeyourself.com。切換帳戶" [ref=e30] [cursor=pointer]:
+            - generic [ref=e33]: edgar@edgarbeyourself.com
+            - img [ref=e35]
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - text: 請參閱「Slack」的《
+          - link "隱私權政策" [ref=e49] [cursor=pointer]:
+            - /url: https://slack.com/privacy-policy
+          - text: 》和《
+          - link "服務條款" [ref=e50] [cursor=pointer]:
+            - /url: https://slack.com/terms-of-service/user
+          - text: 》 ，瞭解「Slack」如何處理及保護您的資料。
+        - generic [ref=e51]:
+          - text: 您隨時可以前往
+          - link "Google 帳戶" [ref=e52] [cursor=pointer]:
+            - /url: https://myaccount.google.com/connections#filter=4
+          - text: 變更相關設定。
+        - generic [ref=e53]:
+          - text: 進一步瞭解
+          - link "「使用 Google 帳戶登入」功能" [ref=e54] [cursor=pointer]:
+            - /url: https://support.google.com/accounts/answer/12921417?sjid=1919169284593837430-NC
+          - text: 。
+      - generic [ref=e57]:
+        - button "取消" [ref=e61]: 取消
+        - button "繼續" [ref=e67]: 繼續
+  - contentinfo [ref=e73]:
+    - combobox "變更語言 繁體中文" [ref=e77] [cursor=pointer]:
+      - generic:
+        - generic: 繁體中文
+      - generic:
+        - img
+    - list [ref=e79]:
+      - listitem [ref=e80]:
+        - link "說明" [ref=e81] [cursor=pointer]:
+          - /url: https://support.google.com/accounts?hl=zh-TW&p=account_iph
+      - listitem [ref=e82]:
+        - link "隱私權設定" [ref=e83] [cursor=pointer]:
+          - /url: https://accounts.google.com/TOS?loc=TW&hl=zh-TW&privacy=true
+      - listitem [ref=e84]:
+        - link "條款" [ref=e85] [cursor=pointer]:
+          - /url: https://accounts.google.com/TOS?loc=TW&hl=zh-TW

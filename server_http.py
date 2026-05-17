@@ -95,6 +95,7 @@ MAX_DISCORD_WEBHOOK_EVENTS = int(os.getenv("MCP_DISCORD_WEBHOOK_EVENT_LIMIT", "1
 # ── OAuth 2.0 一次性授權碼（記憶體暫存，重啟後清空）──────────────────────────
 OAUTH_CODES_LOCK = threading.Lock()
 OAUTH_CODES: dict[str, dict] = {}
+
 TOOLS = [
     {
         "name": "echo",
@@ -878,6 +879,7 @@ TOOLS = [
                 "description": {"type": "string", "description": "Issue description (markdown)"},
                 "team_name": {"type": "string", "description": "Team name (default: first team found)"},
                 "priority": {"type": "integer", "description": "Priority 0=none 1=urgent 2=high 3=medium 4=low (default: 3)"},
+                "assignee": {"type": "string", "description": "Assignee name or email (optional)"},
             },
             "required": ["title"],
         },
@@ -891,8 +893,82 @@ TOOLS = [
                 "issue_id": {"type": "string", "description": "Issue ID (e.g. 'WHO-123')"},
                 "state": {"type": "string", "description": "New state name (e.g. 'Done', 'In Progress')"},
                 "comment": {"type": "string", "description": "Comment to add"},
+                "assignee": {"type": "string", "description": "Assign to this user name or email"},
             },
             "required": ["issue_id"],
+        },
+    },
+    {
+        "name": "linear_assign_issue",
+        "description": "Assign a Linear issue to a user.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issue_id": {"type": "string", "description": "Issue ID (e.g. 'WHO-123')"},
+                "assignee": {"type": "string", "description": "User name or email"},
+            },
+            "required": ["issue_id", "assignee"],
+        },
+    },
+    {
+        "name": "linear_get_issue",
+        "description": "Get one Linear issue with key details.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issue_id": {"type": "string", "description": "Issue ID (e.g. 'WHO-123')"},
+            },
+            "required": ["issue_id"],
+        },
+    },
+    {
+        "name": "linear_comments",
+        "description": "List comments for a Linear issue.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "issue_id": {"type": "string", "description": "Issue ID (e.g. 'WHO-123')"},
+                "limit": {"type": "integer", "description": "Number of comments (default: 10)"},
+            },
+            "required": ["issue_id"],
+        },
+    },
+    {
+        "name": "linear_teams",
+        "description": "List Linear teams.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "linear_projects",
+        "description": "List Linear projects.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Number of projects (default: 10)"},
+            },
+        },
+    },
+    {
+        "name": "linear_users",
+        "description": "List Linear users.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Number of users (default: 10)"},
+            },
+        },
+    },
+    {
+        "name": "linear_statuses",
+        "description": "List available statuses for a Linear team.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "team_name": {"type": "string", "description": "Team name (default: first team found)"},
+            },
         },
     },
 ]
@@ -1425,6 +1501,20 @@ def handle_tools_call(req_id, params: dict) -> dict:
         return handle_linear_create_issue(req_id, arguments)
     if name == "linear_update_issue":
         return handle_linear_update_issue(req_id, arguments)
+    if name == "linear_assign_issue":
+        return handle_linear_assign_issue(req_id, arguments)
+    if name == "linear_get_issue":
+        return handle_linear_get_issue(req_id, arguments)
+    if name == "linear_comments":
+        return handle_linear_comments(req_id, arguments)
+    if name == "linear_teams":
+        return handle_linear_teams(req_id, arguments)
+    if name == "linear_projects":
+        return handle_linear_projects(req_id, arguments)
+    if name == "linear_users":
+        return handle_linear_users(req_id, arguments)
+    if name == "linear_statuses":
+        return handle_linear_statuses(req_id, arguments)
 
     return make_response(req_id, make_tool_text_response(f"Unknown tool: {name}", is_error=True))
 
@@ -1869,18 +1959,12 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         if api_token:  # Token 已設定時，header 必須存在且正確
             if not auth:
                 log("401 Unauthorized: missing token")
-                self.send_response(401)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"Unauthorized")
+                self._send_unauthorized("Missing Bearer token")
                 return
             token = auth.removeprefix("Bearer ").strip()
             if token != api_token:
                 log(f"401 Unauthorized: invalid token")
-                self.send_response(401)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"Unauthorized")
+                self._send_unauthorized("Invalid Bearer token")
                 return
 
         # ── Origin 驗證（spec 強制，防 DNS rebinding）─────────────────────────
@@ -1940,6 +2024,25 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._add_cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_unauthorized(self, error_description: str) -> None:
+        resource_metadata_url = f"{self.server.config.base_url}/.well-known/oauth-protected-resource"
+        body = json.dumps({
+            "error": "unauthorized",
+            "error_description": error_description,
+            "resource_metadata": resource_metadata_url,
+        }, ensure_ascii=False).encode("utf-8")
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "WWW-Authenticate",
+            f'Bearer realm="handcraft-mcp", resource_metadata="{resource_metadata_url}"',
+        )
+        self.send_header("Link", f'<{resource_metadata_url}>; rel="oauth-protected-resource"')
         self._add_cors_headers()
         self.end_headers()
         self.wfile.write(body)
@@ -3230,6 +3333,102 @@ def _linear_graphql(query: str, variables: dict | None = None) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _linear_teams() -> list[dict]:
+    data = _linear_graphql("query { teams { nodes { id name key } } }")
+    return data["data"]["teams"]["nodes"]
+
+
+def _linear_pick_team(team_name: str) -> dict:
+    teams = _linear_teams()
+    if not teams:
+        raise ValueError("no teams found")
+    if not team_name:
+        return teams[0]
+    team_name_lower = team_name.lower()
+    team = next(
+        (
+            t for t in teams
+            if team_name_lower in (t.get("name") or "").lower()
+            or team_name_lower in (t.get("key") or "").lower()
+        ),
+        None,
+    )
+    if not team:
+        available = ", ".join(f"{t['name']} ({t.get('key', '—')})" for t in teams)
+        raise ValueError(f"team '{team_name}' not found. Available: {available}")
+    return team
+
+
+def _linear_users(limit: int = 100) -> list[dict]:
+    query = """
+    query Users($limit: Int!) {
+        users(first: $limit) {
+            nodes {
+                id
+                name
+                email
+                displayName
+                active
+            }
+        }
+    }
+    """
+    data = _linear_graphql(query, {"limit": limit})
+    return data["data"]["users"]["nodes"]
+
+
+def _linear_pick_user(user_query: str) -> dict:
+    users = _linear_users()
+    user_query_lower = user_query.strip().lower()
+    if not user_query_lower:
+        raise ValueError("assignee is required")
+    user = next(
+        (
+            u for u in users
+            if user_query_lower in (u.get("name") or "").lower()
+            or user_query_lower in (u.get("email") or "").lower()
+            or user_query_lower in (u.get("displayName") or "").lower()
+        ),
+        None,
+    )
+    if not user:
+        available = ", ".join(u.get("name") or u.get("email") or "—" for u in users[:20])
+        raise ValueError(f"user '{user_query}' not found. Available: {available}")
+    return user
+
+
+def _linear_find_issue(issue_id: str) -> dict:
+    query = """
+    query IssueByIdentifier($issueId: String!) {
+        issues(filter: { identifier: { eq: $issueId } }, first: 1) {
+            nodes {
+                id
+                identifier
+                title
+                description
+                url
+                priority
+                updatedAt
+                state { id name }
+                assignee { id name email }
+                project { id name }
+                team {
+                    id
+                    name
+                    key
+                    states { nodes { id name } }
+                }
+            }
+        }
+    }
+    """
+    data = _linear_graphql(query, {"issueId": issue_id})
+    nodes = data["data"]["issues"]["nodes"]
+    if not nodes:
+        raise ValueError(f"Issue not found: {issue_id}")
+    return nodes[0]
+
+
 def handle_linear_issues(req_id, arguments: dict) -> dict:
     state = arguments.get("state", "").strip()
     limit = int(arguments.get("limit", 10))
@@ -3280,31 +3479,29 @@ def handle_linear_create_issue(req_id, arguments: dict) -> dict:
     description = arguments.get("description", "").strip()
     team_name = arguments.get("team_name", "").strip()
     priority = int(arguments.get("priority", 3))
+    assignee_name = arguments.get("assignee", "").strip()
     if not title:
         return make_response(req_id, make_tool_text_response("Error: title is required", is_error=True))
     try:
-        # Get team ID
-        teams_data = _linear_graphql("query { teams { nodes { id name } } }")
-        teams = teams_data["data"]["teams"]["nodes"]
-        if not teams:
-            return make_response(req_id, make_tool_text_response("Error: no teams found", is_error=True))
-        team = next((t for t in teams if team_name.lower() in t["name"].lower()), teams[0])
-        team_id = team["id"]
+        team = _linear_pick_team(team_name)
+        assignee = _linear_pick_user(assignee_name) if assignee_name else None
 
         mutation = """
-        mutation CreateIssue($teamId: String!, $title: String!, $description: String, $priority: Int) {
-            issueCreate(input: { teamId: $teamId, title: $title, description: $description, priority: $priority }) {
+        mutation CreateIssue($teamId: String!, $title: String!, $description: String, $priority: Int, $assigneeId: String) {
+            issueCreate(input: { teamId: $teamId, title: $title, description: $description, priority: $priority, assigneeId: $assigneeId }) {
                 issue { identifier title url }
             }
         }
         """
         result = _linear_graphql(mutation, {
-            "teamId": team_id, "title": title,
+            "teamId": team["id"], "title": title,
             "description": description or None, "priority": priority,
+            "assigneeId": assignee["id"] if assignee else None,
         })
         iss = result["data"]["issueCreate"]["issue"]
+        assignee_text = f"\nAssignee: {assignee['name']}" if assignee else ""
         return make_response(req_id, make_tool_text_response(
-            f"Created: [{iss['identifier']}] {iss['title']}\nURL: {iss['url']}"
+            f"Created: [{iss['identifier']}] {iss['title']}\nTeam: {team['name']}{assignee_text}\nURL: {iss['url']}"
         ))
     except Exception as e:
         return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
@@ -3314,23 +3511,12 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
     issue_id = arguments.get("issue_id", "").strip()
     state_name = arguments.get("state", "").strip()
     comment = arguments.get("comment", "").strip()
+    assignee_name = arguments.get("assignee", "").strip()
     if not issue_id:
         return make_response(req_id, make_tool_text_response("Error: issue_id is required", is_error=True))
     try:
         results = []
-        # Resolve issue UUID from identifier
-        find_q = f"""
-        query {{
-            issues(filter: {{ identifier: {{ eq: "{issue_id}" }} }} first: 1) {{
-                nodes {{ id identifier title team {{ states {{ nodes {{ id name }} }} }} }}
-            }}
-        }}
-        """
-        data = _linear_graphql(find_q)
-        nodes = data["data"]["issues"]["nodes"]
-        if not nodes:
-            return make_response(req_id, make_tool_text_response(f"Issue not found: {issue_id}", is_error=True))
-        iss = nodes[0]
+        iss = _linear_find_issue(issue_id)
         iss_uuid = iss["id"]
 
         if state_name:
@@ -3352,6 +3538,19 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
             updated = upd["data"]["issueUpdate"]["issue"]
             results.append(f"State updated → {updated['state']['name']}")
 
+        if assignee_name:
+            assignee = _linear_pick_user(assignee_name)
+            assign_m = """
+            mutation AssignIssue($id: String!, $assigneeId: String!) {
+                issueUpdate(id: $id, input: { assigneeId: $assigneeId }) {
+                    issue { identifier assignee { name } }
+                }
+            }
+            """
+            upd = _linear_graphql(assign_m, {"id": iss_uuid, "assigneeId": assignee["id"]})
+            updated = upd["data"]["issueUpdate"]["issue"]
+            results.append(f"Assigned → {updated['assignee']['name']}")
+
         if comment:
             comment_m = """
             mutation AddComment($issueId: String!, $body: String!) {
@@ -3364,10 +3563,177 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
             results.append("Comment added")
 
         if not results:
-            return make_response(req_id, make_tool_text_response("Nothing to update (provide state or comment)"))
+            return make_response(req_id, make_tool_text_response("Nothing to update (provide state, assignee, or comment)"))
 
         return make_response(req_id, make_tool_text_response(
             f"[{issue_id}] {iss['title']}\n" + "\n".join(results)
+        ))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_assign_issue(req_id, arguments: dict) -> dict:
+    issue_id = arguments.get("issue_id", "").strip()
+    assignee_name = arguments.get("assignee", "").strip()
+    if not issue_id or not assignee_name:
+        return make_response(req_id, make_tool_text_response("Error: issue_id and assignee are required", is_error=True))
+    arguments = {"issue_id": issue_id, "assignee": assignee_name}
+    return handle_linear_update_issue(req_id, arguments)
+
+
+def handle_linear_get_issue(req_id, arguments: dict) -> dict:
+    issue_id = arguments.get("issue_id", "").strip()
+    if not issue_id:
+        return make_response(req_id, make_tool_text_response("Error: issue_id is required", is_error=True))
+    try:
+        iss = _linear_find_issue(issue_id)
+        prio_map = {0: "—", 1: "🔴 Urgent", 2: "🟠 High", 3: "🟡 Medium", 4: "🟢 Low"}
+        desc = (iss.get("description") or "").strip()
+        desc_preview = desc[:500] + ("..." if len(desc) > 500 else "")
+        lines = [
+            f"[{iss['identifier']}] {iss['title']}",
+            f"State: {iss['state']['name']}",
+            f"Priority: {prio_map.get(iss.get('priority', 0), '—')}",
+            f"Team: {iss['team']['name']}",
+            f"Assignee: {(iss.get('assignee') or {}).get('name', '—')}",
+            f"Project: {(iss.get('project') or {}).get('name', '—')}",
+            f"Updated: {iss.get('updatedAt', '—')}",
+            f"URL: {iss.get('url', '—')}",
+        ]
+        if desc_preview:
+            lines.extend(["", "Description:", desc_preview])
+        return make_response(req_id, make_tool_text_response("\n".join(lines)))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_comments(req_id, arguments: dict) -> dict:
+    issue_id = arguments.get("issue_id", "").strip()
+    limit = int(arguments.get("limit", 10))
+    if not issue_id:
+        return make_response(req_id, make_tool_text_response("Error: issue_id is required", is_error=True))
+    try:
+        query = """
+        query IssueComments($issueId: String!, $limit: Int!) {
+            issues(filter: { identifier: { eq: $issueId } }, first: 1) {
+                nodes {
+                    identifier
+                    title
+                    comments(first: $limit) {
+                        nodes {
+                            body
+                            createdAt
+                            user { name }
+                        }
+                    }
+                }
+            }
+        }
+        """
+        data = _linear_graphql(query, {"issueId": issue_id, "limit": limit})
+        nodes = data["data"]["issues"]["nodes"]
+        if not nodes:
+            return make_response(req_id, make_tool_text_response(f"Issue not found: {issue_id}", is_error=True))
+        issue = nodes[0]
+        comments = issue["comments"]["nodes"]
+        if not comments:
+            return make_response(req_id, make_tool_text_response(f"[{issue['identifier']}] {issue['title']}\nNo comments found."))
+        lines = []
+        for comment in comments:
+            body = (comment.get("body") or "").strip()
+            preview = body[:300] + ("..." if len(body) > 300 else "")
+            lines.append(
+                f"- {(comment.get('user') or {}).get('name', 'Unknown')} @ {comment.get('createdAt', '—')}\n  {preview}"
+            )
+        return make_response(req_id, make_tool_text_response(
+            f"[{issue['identifier']}] {issue['title']}\nComments ({len(comments)}):\n\n" + "\n\n".join(lines)
+        ))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_teams(req_id, arguments: dict) -> dict:
+    try:
+        teams = _linear_teams()
+        if not teams:
+            return make_response(req_id, make_tool_text_response("No teams found."))
+        lines = [f"- {team['name']} ({team.get('key', '—')})" for team in teams]
+        return make_response(req_id, make_tool_text_response("Linear teams:\n\n" + "\n".join(lines)))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_projects(req_id, arguments: dict) -> dict:
+    limit = int(arguments.get("limit", 10))
+    try:
+        query = """
+        query Projects($limit: Int!) {
+            projects(first: $limit) {
+                nodes {
+                    id
+                    name
+                    state
+                    progress
+                    targetDate
+                }
+            }
+        }
+        """
+        data = _linear_graphql(query, {"limit": limit})
+        projects = data["data"]["projects"]["nodes"]
+        if not projects:
+            return make_response(req_id, make_tool_text_response("No projects found."))
+        lines = []
+        for project in projects:
+            progress = project.get("progress")
+            progress_text = f"{round(progress * 100)}%" if isinstance(progress, (int, float)) else "—"
+            lines.append(
+                f"- {project['name']}\n  State: {project.get('state', '—')}  Progress: {progress_text}  Target: {project.get('targetDate') or '—'}"
+            )
+        return make_response(req_id, make_tool_text_response("Linear projects:\n\n" + "\n\n".join(lines)))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_users(req_id, arguments: dict) -> dict:
+    limit = int(arguments.get("limit", 10))
+    try:
+        users = _linear_users(limit)
+        if not users:
+            return make_response(req_id, make_tool_text_response("No users found."))
+        lines = []
+        for user in users:
+            lines.append(
+                f"- {user.get('name') or '—'}\n  Email: {user.get('email') or '—'}  Active: {'yes' if user.get('active') else 'no'}"
+            )
+        return make_response(req_id, make_tool_text_response("Linear users:\n\n" + "\n\n".join(lines)))
+    except Exception as e:
+        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+
+
+def handle_linear_statuses(req_id, arguments: dict) -> dict:
+    team_name = arguments.get("team_name", "").strip()
+    try:
+        team = _linear_pick_team(team_name)
+        query = """
+        query TeamStates($teamId: String!) {
+            team(id: $teamId) {
+                name
+                states {
+                    nodes {
+                        name
+                        type
+                    }
+                }
+            }
+        }
+        """
+        data = _linear_graphql(query, {"teamId": team["id"]})
+        team_data = data["data"]["team"]
+        states = team_data["states"]["nodes"]
+        lines = [f"- {state['name']} ({state.get('type', '—')})" for state in states]
+        return make_response(req_id, make_tool_text_response(
+            f"Linear statuses for {team_data['name']}:\n\n" + "\n".join(lines)
         ))
     except Exception as e:
         return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))

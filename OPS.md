@@ -14,7 +14,7 @@
 └── run_http.cmd       ← 啟動 HTTP server（透過 Doppler 注入 key）
 
 Doppler（雲端）
-└── project: handcraft-mcp / config: dev
+└── project: handcraft-mcp / config: prd
     └── 存放所有 API key，啟動時注入，不落地
 
 Cloudflare Tunnel
@@ -28,7 +28,7 @@ Cloudflare Tunnel
 | 用途 | 本機 agent 直連 | 外網 / 遠端呼叫 |
 | 啟動方式 | `run.cmd` | `run_http.cmd` |
 | Port | 無（stdin/stdout） | 8765 |
-| 工具數 | echo | echo + 5 個 agent 工具 |
+| 工具數 | echo | 主要 HTTP 工具集合（目前 61 個工具） |
 | Auth | 無需 | Bearer token |
 
 ---
@@ -85,7 +85,7 @@ doppler secrets get MY_API_KEY
 ```
 
 ### Web UI
-https://dashboard.doppler.com → 選 `handcraft-mcp` → `dev`
+https://dashboard.doppler.com → 選 `handcraft-mcp` → `prd`
 
 ### 改完 key 要重啟 server
 Doppler 在啟動時注入，改完 key 要停掉 server 重跑 `run_http.cmd`。
@@ -211,6 +211,8 @@ Tunnel 由 `cloudflared` 常駐管理，不需手動操作。確認狀態：
 ```bash
 cloudflared tunnel info home-tunnel
 ```
+
+`cloudflared` 目前已設為 Windows Automatic service；`handcraft-mcp` 本體仍需手動啟動 `run_http.cmd`。
 
 ---
 

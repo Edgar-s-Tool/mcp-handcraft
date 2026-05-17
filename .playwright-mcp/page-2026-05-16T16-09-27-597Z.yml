@@ -1,0 +1,64 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link "Slack" [ref=e5] [cursor=pointer]:
+        - /url: https://slack.com
+        - img "Slack" [ref=e6]
+      - generic [ref=e8]:
+        - text: 第一次使用 Slack 嗎？
+        - link "建立帳號" [ref=e9] [cursor=pointer]:
+          - /url: /get-started#/createnew
+    - generic [ref=e10]:
+      - heading "輸入電子郵件地址以登入" [level=1] [ref=e11]
+      - generic [ref=e12]: 或選擇其他登入方式。
+      - generic [ref=e13]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: 輸入你的電子郵件地址
+          - textbox "輸入你的電子郵件地址" [ref=e18]:
+            - /placeholder: 名稱@work-email.com
+          - button "以電子郵件登入" [ref=e19] [cursor=pointer]:
+            - generic [ref=e20]: 以電子郵件登入
+        - generic [ref=e21]:
+          - separator [ref=e22]
+          - generic [ref=e23]: 或透過以下方式登入：
+          - separator [ref=e24]
+        - generic [ref=e27]:
+          - button "Google" [ref=e29] [cursor=pointer]:
+            - generic [ref=e30]:
+              - img [ref=e31]
+              - generic [ref=e38]: Google
+          - link "Apple" [ref=e40] [cursor=pointer]:
+            - /url: https://slack.com/signin/oauth/apple/start?email_first=1&entry_point=redirect_flow
+            - generic [ref=e41]:
+              - img [ref=e42]
+              - generic [ref=e44]: Apple
+      - generic [ref=e46]:
+        - text: 有問題嗎？
+        - link "請輸入工作空間網址" [ref=e47] [cursor=pointer]:
+          - /url: //slack.com/workspace-signin
+    - contentinfo [ref=e50]:
+      - link "隱私權與條款" [ref=e51] [cursor=pointer]:
+        - /url: /intl/zh-tw/legal
+      - link "聯絡我們" [ref=e52] [cursor=pointer]:
+        - /url: /intl/zh-tw/help/requests/new
+      - link "變更地區" [ref=e54] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e55]: 
+        - text: 變更地區
+        - generic [ref=e56]: 
+  - generic [ref=e57]:
+    - alert [ref=e58]
+    - log [ref=e59]
+  - region "餅乾橫幅" [ref=e60]:
+    - alertdialog "隱私" [ref=e61]:
+      - generic [ref=e63]:
+        - generic [ref=e66]:
+          - text: 我們使用 Cookies 讓您與我們網站的互動更有意義。它們有助於我們更了解我們網站的使用情況，以便為您提供量身打造的內容。有關更多我們使用的各種 Cookies 的資訊，請參閱
+          - link "“隱私聲明”" [ref=e67] [cursor=pointer]:
+            - /url: https://www.salesforce.com/tw/company/privacy/full_privacy/
+          - text: 。如要更改您的 Cookies 設定與偏好，請參閱
+          - link "“Cookie 同意管理”" [ref=e68] [cursor=pointer]:
+            - /url: javascript:void(0)
+        - generic [ref=e70]:
+          - button "Cookie 设置" [ref=e71] [cursor=pointer]
+          - button "接受所有 Cookie" [active] [ref=e72] [cursor=pointer]

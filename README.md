@@ -4,7 +4,7 @@ Edgar 的本地 MCP（Model Context Protocol）Server。
 
 讓任何支援 MCP 的 AI（Claude、OpenClaw 等）能透過 HTTP 直接操作本機電腦，包含：檔案系統、Git、系統指令、瀏覽器、Obsidian Vault、Linear、Notion、AI 代理委派、免費圖片生成。
 
-**目前工具數量：54 個**
+**目前工具數量：61 個**
 
 ---
 
@@ -15,8 +15,8 @@ mcp-handcraft/
 ├── server_http.py      ← 主 HTTP MCP Server（port 8765，所有工具都在這）
 ├── server.py           ← stdio 入口（供本地 stdio client 使用）
 ├── mmx_handlers.py     ← MiniMax 媒體生成 handlers
-├── run.cmd             ← 啟動 stdio server
-├── run_http.cmd        ← 啟動 HTTP server（不用 Doppler）
+├── run.cmd             ← 啟動 stdio server（透過 Doppler 注入 secrets）
+├── run_http.cmd        ← 啟動 HTTP server（透過 Doppler 注入 secrets）
 └── test_server_http.py ← smoke test
 ```
 
@@ -28,14 +28,14 @@ mcp-handcraft/
 
 ```powershell
 cd C:\Users\EdgarsTool\Projects\mcp-handcraft
-doppler run -- python server_http.py
+doppler run --project handcraft-mcp --config prd -- py -3 server_http.py
 ```
 
 ### 背景啟動
 
 ```powershell
 Start-Process powershell -ArgumentList '-NoProfile','-Command',
-  'cd "C:\Users\EdgarsTool\Projects\mcp-handcraft"; doppler run -- python server_http.py' -WindowStyle Minimized
+  'cd "C:\Users\EdgarsTool\Projects\mcp-handcraft"; doppler run --project handcraft-mcp --config prd -- py -3 server_http.py' -WindowStyle Minimized
 ```
 
 ### 確認運作中
@@ -79,7 +79,7 @@ Token 由 Doppler 管理（`MCP_API_TOKEN`）。
 
 ---
 
-## 工具總覽（54 個）
+## 工具總覽（61 個）
 
 ### 🤖 AI 代理（7）
 
@@ -278,7 +278,8 @@ doppler run -- python -m unittest test_server_http.py -v
 https://mcp.whoasked.vip/mcp
 ```
 
-透過 Cloudflare Tunnel 對外。本機重開機後需手動重啟 cloudflared。
+透過 Cloudflare Tunnel 對外，對外入口為 `https://mcp.whoasked.vip/mcp`，本機服務為 `http://localhost:8765`。
+目前 `cloudflared` 已設為 Windows Automatic service；`handcraft-mcp` 本體仍需手動啟動。
 
 ---
 
