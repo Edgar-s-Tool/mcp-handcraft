@@ -1,0 +1,20 @@
+{
+  "name": "chat-agent",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.92.0"
+  },
+  "dependencies": {
+    "@cloudflare/ai-chat": "^0.7.0",
+    "agents": "^0.12.4",
+    "ai": "^6.0.184",
+    "workers-ai-provider": "^3.1.14",
+    "zod": "^4.4.3"
+  }
+}
