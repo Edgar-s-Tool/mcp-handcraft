@@ -3415,11 +3415,10 @@ def _build_tracking_report(carrier_input: str, tracking_number: str, carrier: di
         "tracking_number": str(data.get("tracking_number") or tracking_number).strip().upper(),
         "package_uuid": str(data.get("id") or data.get("uuid") or ""),
         "current_stage": current["stage"],
-        "current_status": current["to_status"] or current["detail"],
+        "current_status": current["to_status"],
         "current_checkpoint_status": current["to_checkpoint_status"],
         "current_event_time": current["current_event_time"],
         "current_event_time_display": current["current_event_time_display"],
-        "current_time": current["time_display"],
         "latest_transition": {
             "from_status": current["from_status"],
             "from_checkpoint_status": current["from_checkpoint_status"],
