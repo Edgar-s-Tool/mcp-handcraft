@@ -23,6 +23,7 @@ from server_http import (
     handle_agent_job_cleanup,
     handle_agent_job_list,
     handle_claude_code_agent,
+    handle_local_terrain_scout,
     handle_tools_call,
     handle_tools_list,
     handle_tracktw_package_status,
@@ -171,6 +172,56 @@ class DiscordWebhookTests(unittest.TestCase):
 
         self.assertEqual(400, status)
         self.assertFalse(response["ok"])
+
+
+class LocalTerrainScoutTests(unittest.TestCase):
+    def test_local_terrain_scout_schema_is_registered(self):
+        listed_tools = handle_tools_list(req_id=1, params={})["result"]["tools"]
+        names = {tool["name"] for tool in listed_tools}
+
+        self.assertIn("local_terrain_scout", names)
+
+    def test_local_terrain_scout_runs_script_as_text(self):
+        completed = subprocess.CompletedProcess(
+            args=["powershell"],
+            returncode=0,
+            stdout="Local Terrain Scout\nMode: read-only\n",
+            stderr="",
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".ps1") as script_file, \
+             patch.object(server_http, "LOCAL_TERRAIN_SCOUT_SCRIPT", Path(script_file.name)), \
+             patch.object(server_http.subprocess, "run", return_value=completed) as run_mock:
+            response = handle_local_terrain_scout(req_id=1, arguments={})
+
+        self.assertFalse(tool_is_error(response))
+        self.assertIn("Local Terrain Scout", tool_text(response))
+        command = run_mock.call_args.args[0]
+        self.assertIn("-File", command)
+        self.assertNotIn("-Json", command)
+
+    def test_local_terrain_scout_supports_json_format(self):
+        completed = subprocess.CompletedProcess(
+            args=["powershell"],
+            returncode=0,
+            stdout='{"mode":"read-only"}',
+            stderr="",
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".ps1") as script_file, \
+             patch.object(server_http, "LOCAL_TERRAIN_SCOUT_SCRIPT", Path(script_file.name)), \
+             patch.object(server_http.subprocess, "run", return_value=completed) as run_mock:
+            response = handle_local_terrain_scout(req_id=1, arguments={"format": "json"})
+
+        self.assertFalse(tool_is_error(response))
+        self.assertIn('"mode":"read-only"', tool_text(response))
+        self.assertIn("-Json", run_mock.call_args.args[0])
+
+    def test_local_terrain_scout_rejects_unknown_format(self):
+        response = handle_local_terrain_scout(req_id=1, arguments={"format": "xml"})
+
+        self.assertTrue(tool_is_error(response))
+        self.assertIn("format must be", tool_text(response))
 
 
 class TrackTWTests(unittest.TestCase):

@@ -81,6 +81,9 @@ CLAUDE_CMD = shutil.which("claude") or "claude"
 GEMINI_CMD = shutil.which("gemini") or "gemini"
 OLLAMA_CMD = r"C:\Users\EdgarsTool\AppData\Local\Programs\Ollama\ollama.exe"
 CODEX_DEFAULT_WORKDIR = r"C:\Users\EdgarsTool"
+LOCAL_TERRAIN_SCOUT_SCRIPT = Path(
+    r"C:\Users\EdgarsTool\.codex\skills\local-terrain-scout\scripts\scan-local-terrain.ps1"
+)
 AGENT_TIMEOUT_SECONDS = int(os.getenv("MCP_AGENT_TIMEOUT_SECONDS", "300"))
 
 PORT = 8765
@@ -299,6 +302,24 @@ TOOLS = [
                 },
             },
             "required": ["task"],
+        },
+    },
+    {
+        "name": "local_terrain_scout",
+        "description": (
+            "Read-only local terrain scan for Edgar's Windows workspace. "
+            "Use before coding, cleanup, repo triage, project discovery, or agent handoff "
+            "to inspect Projects, Sandbox, Worktrees, Agent-KB presence, danger-zone existence, "
+            "and git dirty summaries without reading secrets or modifying files."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "description": "Output format: text (default) or json.",
+                },
+            },
         },
     },
     {
@@ -1396,6 +1417,9 @@ def handle_tools_call(req_id, params: dict) -> dict:
     if name == "smart_agent":
         return handle_smart_agent(req_id, arguments)
 
+    if name == "local_terrain_scout":
+        return handle_local_terrain_scout(req_id, arguments)
+
     if name == "notion_search":
         return handle_notion_search(req_id, arguments)
 
@@ -1532,6 +1556,71 @@ def handle_claude_code_agent(req_id, arguments: dict) -> dict:
     task, working_dir = sync_args
     output, is_error = run_claude_code_task(task, working_dir)
     return make_response(req_id, make_tool_text_response(output, is_error=is_error))
+
+
+def handle_local_terrain_scout(req_id, arguments: dict) -> dict:
+    output_format = str(arguments.get("format", "text")).strip().lower()
+    if output_format not in {"text", "json"}:
+        return make_response(
+            req_id,
+            make_tool_text_response("Error: format must be 'text' or 'json'", is_error=True),
+        )
+
+    if not LOCAL_TERRAIN_SCOUT_SCRIPT.exists():
+        return make_response(
+            req_id,
+            make_tool_text_response(
+                f"Error: local terrain scout script not found: {LOCAL_TERRAIN_SCOUT_SCRIPT}",
+                is_error=True,
+            ),
+        )
+
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(LOCAL_TERRAIN_SCOUT_SCRIPT),
+    ]
+    if output_format == "json":
+        command.append("-Json")
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired:
+        return make_response(
+            req_id,
+            make_tool_text_response("local_terrain_scout timed out after 60 seconds", is_error=True),
+        )
+    except Exception as exc:
+        return make_response(
+            req_id,
+            make_tool_text_response(f"local_terrain_scout failed: {exc}", is_error=True),
+        )
+
+    output = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    if result.returncode != 0:
+        sections = []
+        if stderr:
+            sections.append(f"[stderr]\n{stderr}")
+        if output:
+            sections.append(f"[stdout]\n{output}")
+        return make_response(
+            req_id,
+            make_tool_text_response("\n".join(sections) or "local_terrain_scout failed", is_error=True),
+        )
+
+    if stderr:
+        output = f"{output}\n\n[stderr]\n{stderr}".strip()
+    return make_response(req_id, make_tool_text_response(output or "(no terrain output)"))
 
 
 def handle_agent_job_status(req_id, arguments: dict) -> dict:
