@@ -368,6 +368,56 @@ class TrackTWTests(unittest.TestCase):
             report["latest_transition"],
         )
 
+    def test_tracktw_report_reuses_google_sheet_status_model(self):
+        tracking_data = {
+            "tracking_number": "ABC123",
+            "id": "pkg-1",
+            "package_history": [
+                {"time": 1714543200, "status": "門市已收件", "checkpoint_status": "已收件"},
+                {"time": 1714629600, "status": "已抵達物流中心", "checkpoint_status": "已到站/集散"},
+            ],
+        }
+
+        report = server_http._build_tracking_report(
+            "7-Eleven",
+            "abc123",
+            {"id": "seven-eleven", "name": "7-Eleven"},
+            tracking_data,
+        )
+
+        self.assertEqual(
+            "Google Sheet: TrackTW / tracktw_active + tracktw_events",
+            report["status_model"]["source"],
+        )
+        self.assertEqual(list(server_http.TRACKTW_ACTIVE_FIELDS), list(report["active_row"].keys()))
+        self.assertEqual(list(server_http.TRACKTW_EVENT_FIELDS), list(report["timeline"][0].keys()))
+        self.assertEqual("已抵達物流中心", report["active_row"]["current_status"])
+        self.assertEqual("已到站/集散", report["active_row"]["current_checkpoint_status"])
+        self.assertEqual("2024-05-02T14:00:00+08:00", report["active_row"]["current_event_time"])
+        self.assertEqual("門市已收件", report["timeline"][1]["from_status"])
+        self.assertEqual("已抵達物流中心", report["timeline"][1]["to_status"])
+        self.assertEqual(report["current_event_time"], report["timeline"][1]["current_event_time"])
+
+    def test_tracktw_report_accepts_current_status_without_history(self):
+        tracking_data = {
+            "tracking_number": "ABC123",
+            "current_status": "包裹已送達",
+            "current_checkpoint_status": "已送達",
+            "current_event_time": "2024-05-03T14:00:00+08:00",
+        }
+
+        report = server_http._build_tracking_report(
+            "黑貓",
+            "abc123",
+            {"id": "blackcat", "name": "黑貓宅急便"},
+            tracking_data,
+        )
+
+        self.assertEqual("已送達", report["current_stage"])
+        self.assertEqual("包裹已送達", report["current_status"])
+        self.assertEqual("2024-05-03T14:00:00+08:00", report["current_event_time"])
+        self.assertEqual("已送達", report["eta"]["eta"])
+
     def test_tracktw_package_status_exports_xlsx_report(self):
         tracking_data = {
             "tracking_number": "ABC123",
