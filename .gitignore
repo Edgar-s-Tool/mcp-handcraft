@@ -3,6 +3,7 @@ __pycache__/
 *.log
 .screenshots/
 reports/
+logs/
 *.png
 *.jpg
 *.jpeg

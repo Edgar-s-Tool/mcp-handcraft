@@ -316,6 +316,18 @@ Run from the repo root:
 .\scripts\Rotate-CacheTrace.ps1
 ```
 
+For scheduled runs, use the wrapper. It writes the latest run result to `logs\cache-trace-rotation-status.json`:
+
+```powershell
+.\scripts\Run-CacheTraceRotation.ps1
+```
+
+Windows Scheduled Task:
+
+- Task name: `McpHandcraftCacheTraceRotation`
+- Cadence: hourly
+- Action: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\EdgarsTool\Projects\mcp-handcraft\scripts\Run-CacheTraceRotation.ps1"`
+
 Use `-WhatIf` to preview:
 
 ```powershell
