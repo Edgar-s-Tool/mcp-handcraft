@@ -1,5 +1,6 @@
 """Unit tests and smoke checks for server_http helpers."""
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -135,6 +136,51 @@ class HttpStartupConfigTests(unittest.TestCase):
         finally:
             first_server.server_close()
             second_server.server_close()
+
+
+class CacheTraceRotationScriptTests(unittest.TestCase):
+    def test_cache_trace_rotation_archives_then_reopens_log(self):
+        script_path = Path(__file__).parent / "scripts" / "Rotate-CacheTrace.ps1"
+
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmpdir:
+            tmp_path = Path(tmpdir)
+            log_path = tmp_path / "logs" / "cache-trace.jsonl"
+            archive_dir = tmp_path / "logs" / "archive" / "cache-trace"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text('{"event":"before"}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script_path),
+                    "-LogPath",
+                    str(log_path),
+                    "-ArchiveDir",
+                    str(archive_dir),
+                    "-MaxSizeMB",
+                    "0.000001",
+                    "-MaxAgeDays",
+                    "0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            result = json.loads(completed.stdout)
+            archives = list(archive_dir.glob("cache-trace-*.jsonl"))
+            checkpoints = list(archive_dir.glob("cache-trace-*.checkpoint.json"))
+
+            self.assertTrue(result["rotated"])
+            self.assertEqual("size", result["reason"])
+            self.assertEqual("", log_path.read_text(encoding="utf-8"))
+            self.assertEqual(1, len(archives))
+            self.assertEqual('{"event":"before"}\n', archives[0].read_text(encoding="utf-8"))
+            self.assertEqual(1, len(checkpoints))
 
 
 class DiscordWebhookTests(unittest.TestCase):

@@ -277,6 +277,38 @@ Local Linear webhook test:
 curl.exe -X POST http://127.0.0.1:8765/webhook/linear -H "Content-Type: application/json" -d "{\"type\":\"Issue\",\"action\":\"create\"}"
 ```
 
+### cache-trace rotation / archive
+
+`logs\cache-trace.jsonl` is treated as gateway/runtime trace output. The current `mcp-handcraft` Python server does not write `cache-trace.jsonl` directly; if the file exists, it is expected to come from the surrounding gateway/runtime wrapper or deployment path. Do not mix this lane with gateway secret repair.
+
+Rotation policy:
+
+- Rotate when the file is at least `128MB`, or older than `1` day.
+- Archive to `logs\archive\cache-trace\`.
+- Keep the newest `14` archives in the primary archive folder; older archives are moved to `retired\` instead of being deleted.
+- Create a `.checkpoint.json` before moving the active log.
+- Never archive to Desktop, secrets folders, `.openclaw\workspace`, or AI cache paths.
+- Do not delete the active log; the script moves it to archive and creates a new empty `cache-trace.jsonl`.
+
+Run from the repo root:
+
+```powershell
+.\scripts\Rotate-CacheTrace.ps1
+```
+
+Use `-WhatIf` to preview:
+
+```powershell
+.\scripts\Rotate-CacheTrace.ps1 -WhatIf
+```
+
+After rotation, verify the gateway can still append to the new log:
+
+```powershell
+Add-Content -LiteralPath .\logs\cache-trace.jsonl -Value '{"check":"write-after-rotation"}'
+Get-Item .\logs\cache-trace.jsonl | Select-Object FullName,Length,LastWriteTime
+```
+
 ---
 
 ## 11. 常見問題
