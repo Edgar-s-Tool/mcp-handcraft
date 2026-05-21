@@ -480,6 +480,11 @@ class CacheTraceRotationScriptTests(unittest.TestCase):
             self.assertEqual('{"event":"before"}\n', archives[0].read_text(encoding="utf-8"))
             self.assertEqual(1, len(checkpoints))
 
+            with log_path.open("a", encoding="utf-8") as log_file:
+                log_file.write('{"event":"after-rotation"}\n')
+
+            self.assertEqual('{"event":"after-rotation"}\n', log_path.read_text(encoding="utf-8"))
+
 
 class DiscordWebhookTests(unittest.TestCase):
     def setUp(self):
