@@ -262,6 +262,49 @@ class OAuthFlowTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=5)
 
+    def test_resource_metadata_advertises_oauth_resource(self):
+        server, thread, base = self._start_server()
+        try:
+            with urllib.request.urlopen(f"{base}/.well-known/oauth-protected-resource", timeout=5) as response:
+                metadata = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual("https://mcp.example.test", metadata["resource"])
+            self.assertEqual(["https://mcp.example.test"], metadata["authorization_servers"])
+            self.assertEqual(["mcp"], metadata["scopes_supported"])
+            self.assertIn("client_secret_post", metadata["token_endpoint_auth_methods_supported"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_mcp_unauthorized_advertises_resource_metadata(self):
+        server, thread, base = self._start_server()
+        try:
+            body = json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {},
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{base}/mcp",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req, timeout=5)
+
+            self.assertEqual(401, raised.exception.code)
+            authenticate = raised.exception.headers["WWW-Authenticate"]
+            self.assertIn("Bearer", authenticate)
+            self.assertIn('resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource"', authenticate)
+            self.assertIn('scope="mcp"', authenticate)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_register_rejects_missing_redirect_uris(self):
         server, thread, base = self._start_server()
         try:
@@ -309,6 +352,7 @@ class OAuthFlowTests(unittest.TestCase):
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "scope": "mcp",
+                "resource": "https://mcp.example.test",
                 "state": "state-1",
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
@@ -329,6 +373,7 @@ class OAuthFlowTests(unittest.TestCase):
                 "redirect_uri": redirect_uri,
                 "code": code,
                 "code_verifier": verifier,
+                "resource": "https://mcp.example.test",
                 "client_secret": client_secret,
             }).encode("utf-8")
             token_req = urllib.request.Request(
@@ -369,6 +414,23 @@ class OAuthFlowTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+    def test_tools_list_has_chatgpt_app_required_metadata(self):
+        response = handle_tools_list(req_id=1, params={})
+        listed_tools = response["result"]["tools"]
+
+        self.assertGreater(len(listed_tools), 0)
+        for tool in listed_tools:
+            with self.subTest(tool=tool["name"]):
+                self.assertIsInstance(tool.get("title"), str)
+                self.assertTrue(tool["title"])
+                annotations = tool.get("annotations")
+                self.assertIsInstance(annotations, dict)
+                self.assertIn("readOnlyHint", annotations)
+                self.assertIn("openWorldHint", annotations)
+                self.assertIn("destructiveHint", annotations)
+                self.assertEqual([{"type": "oauth2", "scopes": ["mcp"]}], tool.get("securitySchemes"))
+                self.assertEqual(tool["securitySchemes"], tool.get("_meta", {}).get("securitySchemes"))
 
 
 class CacheTraceRotationScriptTests(unittest.TestCase):

@@ -147,6 +147,8 @@ TRACKTW_EVENT_FIELDS = (
     "message",
 )
 
+OAUTH_SCOPE = "mcp"
+
 # ── OAuth 2.0 一次性授權碼（記憶體暫存，重啟後清空）──────────────────────────
 OAUTH_CODES_LOCK = threading.Lock()
 OAUTH_CODES: dict[str, dict] = {}
@@ -1032,6 +1034,74 @@ TOOLS = [
     },
 ]
 
+READ_ONLY_TOOL_NAMES = {
+    "echo",
+    "agent_job_status",
+    "agent_job_list",
+    "notion_search",
+    "notion_get_page",
+    "mmx_vision_describe",
+    "mmx_search_query",
+    "mmx_text_chat",
+    "mmx_quota_show",
+    "fs_list",
+    "fs_read",
+    "fs_search",
+    "fs_disk_info",
+    "sys_info",
+    "sys_processes",
+    "git_status",
+    "git_log",
+    "git_diff",
+    "browser_get_text",
+    "browser_run_script",
+    "vault_read",
+    "vault_list",
+    "vault_search",
+    "vault_recent",
+    "vault_tasks",
+    "vault_tags",
+    "tracktw_carriers",
+    "tracktw_package_status",
+    "web_search",
+    "linear_issues",
+}
+
+DESTRUCTIVE_TOOL_NAMES = {
+    "fs_write",
+    "fs_delete",
+    "vault_write",
+    "vault_delete",
+    "vault_sort_inbox",
+    "git_commit",
+    "linear_update_issue",
+}
+
+
+def _tool_impact_annotations(tool_name: str) -> dict:
+    read_only = tool_name in READ_ONLY_TOOL_NAMES
+    destructive = tool_name in DESTRUCTIVE_TOOL_NAMES
+    return {
+        "readOnlyHint": read_only,
+        "openWorldHint": not read_only,
+        "destructiveHint": destructive,
+    }
+
+
+def _normalize_tool_descriptor(tool: dict) -> dict:
+    descriptor = dict(tool)
+    name = str(descriptor.get("name") or "")
+    descriptor.setdefault("title", name.replace("_", " ").title())
+    descriptor.setdefault("annotations", _tool_impact_annotations(name))
+    descriptor.setdefault("securitySchemes", [{"type": "oauth2", "scopes": [OAUTH_SCOPE]}])
+    meta = dict(descriptor.get("_meta") or {})
+    meta.setdefault("securitySchemes", descriptor["securitySchemes"])
+    descriptor["_meta"] = meta
+    return descriptor
+
+
+TOOLS = [_normalize_tool_descriptor(tool) for tool in TOOLS]
+
 # ── Origin 白名單（防 DNS rebinding，spec 強制要求）────────────────────────────
 # 允許 localhost / 127.0.0.1 任意 port，供本地開發 + MCP Inspector 使用。
 # Cloudflare Tunnel 接入後，瀏覽器 origin 會是 tunnel domain，需另行加入。
@@ -1057,6 +1127,18 @@ def make_tool_text_response(text: str, *, is_error: bool = False) -> dict:
         "content": [{"type": "text", "text": text}],
         "isError": is_error,
     }
+
+
+def make_www_authenticate_header(base_url: str, *, error: str | None = None, description: str | None = None) -> str:
+    parts = [
+        f'resource_metadata="{base_url.rstrip("/")}/.well-known/oauth-protected-resource"',
+        f'scope="{OAUTH_SCOPE}"',
+    ]
+    if error:
+        parts.append(f'error="{error}"')
+    if description:
+        parts.append(f'error_description="{description}"')
+    return "Bearer " + ", ".join(parts)
 
 
 def make_webhook_response(event_type: str, accepted: bool = True) -> dict:
@@ -2028,6 +2110,19 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_mcp_unauthorized(self, *, error: str, description: str) -> None:
+        body = b"Unauthorized"
+        self.send_response(401)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "WWW-Authenticate",
+            make_www_authenticate_header(self.server.config.base_url, error=error, description=description),
+        )
+        self._add_cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
     def _handle_oauth_metadata(self) -> None:
         base_url = self.server.config.base_url
         self._send_oauth_json({
@@ -2041,7 +2136,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic", "none"],
             "token_endpoint_auth_signing_alg_values_supported": [],
             "revocation_endpoint_auth_methods_supported": ["none"],
-            "scopes_supported": ["mcp"],
+            "scopes_supported": [OAUTH_SCOPE],
             "subject_types_supported": ["public"],
         })
 
@@ -2050,8 +2145,10 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         self._send_oauth_json({
             "resource": base_url,
             "authorization_servers": [base_url],
-            "scopes_supported": ["mcp"],
+            "scopes_supported": [OAUTH_SCOPE],
             "bearer_methods_supported": ["header"],
+            "resource_documentation": f"{base_url}/mcp",
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic", "none"],
         })
 
     def _handle_health(self) -> None:
@@ -2088,7 +2185,8 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         client_id = params.get("client_id", [""])[0]
         redirect_uri = params.get("redirect_uri", [""])[0]
         state = params.get("state", [""])[0]
-        scope = params.get("scope", ["mcp"])[0] or "mcp"
+        scope = params.get("scope", [OAUTH_SCOPE])[0] or OAUTH_SCOPE
+        resource = params.get("resource", [""])[0]
         code_challenge = params.get("code_challenge", [""])[0]
         code_challenge_method = params.get("code_challenge_method", [""])[0] or "S256"
 
@@ -2105,8 +2203,8 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         if code_challenge_method != "S256" or not code_challenge:
             self._send_oauth_json(oauth_error("invalid_request", "PKCE S256 code_challenge is required"), 400)
             return
-        if scope and "mcp" not in scope.split():
-            self._send_oauth_json(oauth_error("invalid_scope", "scope must include mcp"), 400)
+        if scope and OAUTH_SCOPE not in scope.split():
+            self._send_oauth_json(oauth_error("invalid_scope", f"scope must include {OAUTH_SCOPE}"), 400)
             return
 
         code = secrets.token_urlsafe(32)
@@ -2116,6 +2214,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                 "used": False,
                 "client_id": client_id,
                 "scope": scope,
+                "resource": resource,
                 "code_challenge": code_challenge,
                 "code_challenge_method": code_challenge_method,
                 "redirect_uri": redirect_uri,
@@ -2144,6 +2243,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         client_id = params.get("client_id", "")
         redirect_uri = params.get("redirect_uri", "")
         code_verifier = params.get("code_verifier", "")
+        resource = params.get("resource", "")
         basic_credentials = parse_basic_client_credentials(self.headers.get("Authorization", ""))
         if basic_credentials and not client_id:
             client_id = basic_credentials[0]
@@ -2168,6 +2268,9 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             if redirect_uri != entry.get("redirect_uri"):
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "redirect_uri mismatch"}, 400)
                 return
+            if entry.get("resource") and resource and resource != entry.get("resource"):
+                self._send_oauth_json({"error": "invalid_grant", "error_description": "resource mismatch"}, 400)
+                return
             if not pkce_verifier_matches(
                 code_verifier,
                 entry.get("code_challenge", ""),
@@ -2176,7 +2279,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "PKCE verification failed"}, 400)
                 return
             entry["used"] = True
-            scope = entry.get("scope", "mcp")
+            scope = entry.get("scope", OAUTH_SCOPE)
 
         access_token, expires_in = issue_oauth_access_token(client_id, scope)
         log("OAuth /token → issued access_token")
@@ -2253,18 +2356,18 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         if api_token:  # Token 已設定時，header 必須存在且正確
             if not auth:
                 log("401 Unauthorized: missing token")
-                self.send_response(401)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"Unauthorized")
+                self._send_mcp_unauthorized(
+                    error="invalid_token",
+                    description="Missing bearer token. Authorize this MCP app to continue.",
+                )
                 return
             token = auth.removeprefix("Bearer ").strip()
             if not bearer_token_is_authorized(token, api_token):
                 log(f"401 Unauthorized: invalid token")
-                self.send_response(401)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"Unauthorized")
+                self._send_mcp_unauthorized(
+                    error="invalid_token",
+                    description="Bearer token is invalid or expired. Re-authorize this MCP app.",
+                )
                 return
 
         # ── Origin 驗證（spec 強制，防 DNS rebinding）─────────────────────────
