@@ -13,8 +13,8 @@ import urllib.request
 
 DEFAULT_MCP_URL = "http://127.0.0.1:8765/mcp"
 MCP_URL = os.getenv("HERMES_HANDCRAFT_MCP_URL", DEFAULT_MCP_URL)
-AUTH_TOKEN = os.getenv("HERMES_HANDCRAFT_MCP_TOKEN") or os.getenv("MCP_AUTH_TOKEN")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("HERMES_HANDCRAFT_TIMEOUT_SECONDS", "30"))
+PREFLIGHT_TIMEOUT_SECONDS = float(os.getenv("HERMES_HANDCRAFT_PREFLIGHT_TIMEOUT_SECONDS", "5"))
 
 
 if sys.platform == "win32":
@@ -39,20 +39,70 @@ def make_error(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
+def load_auth_token() -> str:
+    for env_name in ("HERMES_HANDCRAFT_MCP_TOKEN", "MCP_API_TOKEN", "MCP_AUTH_TOKEN"):
+        token = os.getenv(env_name, "").strip()
+        if token:
+            return token
+    return ""
+
+
 def build_request(payload: dict) -> urllib.request.Request:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-    if AUTH_TOKEN:
-        headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+    auth_token = load_auth_token()
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
     return urllib.request.Request(MCP_URL, data=body, headers=headers, method="POST")
 
 
-def forward_to_http(payload: dict) -> dict | None:
+class HermesPreflightError(RuntimeError):
+    pass
+
+
+def validate_auth_token() -> str:
+    token = load_auth_token()
+    if not token:
+        raise HermesPreflightError("MCP_API_TOKEN is not available for Hermes handcraft MCP preflight")
+    return token
+
+
+def run_preflight() -> None:
+    validate_auth_token()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "hermes-preflight",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "hermes-stdio-proxy"},
+        },
+    }
+
+    try:
+        response = forward_to_http(payload, timeout=PREFLIGHT_TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise HermesPreflightError(f"MCP_API_TOKEN was rejected by handcraft MCP at {MCP_URL}") from exc
+        raise HermesPreflightError(f"handcraft MCP preflight failed at {MCP_URL}: HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise HermesPreflightError(f"handcraft MCP is unreachable at {MCP_URL}: {exc.reason}") from exc
+    except TimeoutError as exc:
+        raise HermesPreflightError(f"handcraft MCP preflight timed out at {MCP_URL}") from exc
+    except json.JSONDecodeError as exc:
+        raise HermesPreflightError(f"handcraft MCP preflight returned non-JSON from {MCP_URL}") from exc
+
+    if not isinstance(response, dict) or "result" not in response:
+        raise HermesPreflightError(f"handcraft MCP preflight returned an invalid initialize response from {MCP_URL}")
+
+
+def forward_to_http(payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict | None:
     request = build_request(payload)
-    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         raw = response.read()
         if response.status == 202 or not raw:
             return None
@@ -91,6 +141,12 @@ def handle_line(line: str) -> None:
 
 
 def main() -> None:
+    try:
+        run_preflight()
+    except HermesPreflightError as exc:
+        log(f"Startup aborted: {exc}")
+        raise SystemExit(1) from None
+
     log(f"forwarding stdio JSON-RPC to {MCP_URL}")
     for line in sys.stdin:
         line = line.strip()
