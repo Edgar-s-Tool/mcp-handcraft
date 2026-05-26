@@ -1,0 +1,4 @@
+interface:
+  display_name: "Linear"
+  short_description: "Manage Linear workflows for mcp-handcraft."
+  default_prompt: "Track this repo task in Linear."

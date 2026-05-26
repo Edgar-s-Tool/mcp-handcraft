@@ -1,7 +1,7 @@
 {
-  "name": "[TODO: marketplace-name]",
+  "name": "mcp-handcraft",
   "interface": {
-    "displayName": "[TODO: Marketplace Display Name]"
+    "displayName": "mcp-handcraft Plugins"
   },
   "plugins": [
     {
