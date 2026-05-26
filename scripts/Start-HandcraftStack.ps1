@@ -49,16 +49,20 @@ New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 if (-not (Test-LocalHealth)) {
     $doppler = Get-Command doppler -ErrorAction Stop
-    $py = Get-Command py -ErrorAction Stop
+    $pythonCommand = Get-Command py -ErrorAction SilentlyContinue
+    $pythonArgs = @("-3", $ServerPath)
+    if (-not $pythonCommand) {
+        $pythonCommand = Get-Command python -ErrorAction Stop
+        $pythonArgs = @($ServerPath)
+    }
+
     $args = @(
         "run",
         "--project", "handcraft-mcp",
         "--config", "prd",
         "--",
-        $py.Source,
-        "-3",
-        $ServerPath
-    )
+        $pythonCommand.Source
+    ) + $pythonArgs
 
     Start-Process `
         -FilePath $doppler.Source `

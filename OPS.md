@@ -80,13 +80,15 @@ curl.exe http://127.0.0.1:8765/health
 ## 3. Secret 管理（Doppler）
 
 ### 新增 key
-```bash
-doppler secrets set MY_API_KEY=sk-xxxx
+```powershell
+doppler secrets set MY_API_KEY --project handcraft-mcp --config prd
+# 在互動式 stdin 貼上值；不要把值放在命令列
 ```
 
 ### 更新 key
-```bash
-doppler secrets set MY_API_KEY=sk-new-value
+```powershell
+doppler secrets set MY_API_KEY --project handcraft-mcp --config prd
+# 在互動式 stdin 貼上新值；不要使用 MY_API_KEY=真值
 ```
 
 ### 刪除 key
@@ -99,10 +101,8 @@ doppler secrets delete MY_API_KEY
 doppler secrets
 ```
 
-### 查看特定 key 的值
-```bash
-doppler secrets get MY_API_KEY
-```
+### 查看特定 key
+避免在一般 shell 直接印出 secret 值。需要確認是否存在時，用 `doppler secrets` 看遮蔽後清單；真的要看值，請走 Doppler Web UI 或受控的 secrets 區，不要把輸出複製進 repo、log 或對話。
 
 ### Web UI
 https://dashboard.doppler.com → 選 `handcraft-mcp` → `dev`
@@ -178,6 +178,8 @@ def handle_my_tool(req_id, arguments: dict) -> dict:
 | `MCP_JOB_RETENTION_SECONDS` | `3600` | 背景 job 結果保留時間（秒） |
 
 修改方式：
+非敏感設定可直接寫值；secret / token 不要這樣放進命令列。
+
 ```bash
 doppler secrets set MCP_AGENT_TIMEOUT_SECONDS=600
 ```
@@ -188,20 +190,19 @@ doppler secrets set MCP_AGENT_TIMEOUT_SECONDS=600
 
 ### Bearer Token（HTTP server）
 
-在 `server_http.py` 第 34 行：
-```python
-API_TOKEN = "null$Orchestrator=zer0"
+HTTP server 啟動時會讀 `MCP_API_TOKEN`，沒有設定會直接中止，不再使用 repo 內明文 fallback。
+
+設定 token 時走 Doppler stdin / Web UI，不要把 token 寫進命令列或 shell history：
+
+```powershell
+doppler secrets set MCP_API_TOKEN --project handcraft-mcp --config prd
+# 在互動式 stdin 貼上 token
 ```
 
-要換 token：改這行，重啟 server，同時更新客戶端設定。
+本機手動驗證 `/mcp` 時使用 wrapper。它只從環境變數讀 token，不接受 token 參數：
 
-建議改成從 Doppler 讀取（更安全）：
-```python
-API_TOKEN = os.getenv("MCP_API_TOKEN", "null$Orchestrator=zer0")
-```
-然後：
-```bash
-doppler secrets set MCP_API_TOKEN=你的新token
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-HandcraftMcp.ps1
 ```
 
 ### Origin 白名單（DNS rebinding 防護）
@@ -352,7 +353,11 @@ Get-Item .\logs\cache-trace.jsonl | Select-Object FullName,Length,LastWriteTime
 → 把你的 origin 加進 `ALLOWED_HOSTNAMES`。
 
 **Q：curl 回 401 Unauthorized**
-→ 加上 header：`-H "Authorization: Bearer null$Orchestrator=zer0"`
+→ 不要把 bearer token 寫在 `curl -H` 命令列。確認 `MCP_API_TOKEN` 或 `HERMES_HANDCRAFT_MCP_TOKEN` 已由 Doppler/env 提供，然後跑：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-HandcraftMcp.ps1
+```
 
 **Q：agent 工具回 timeout**
 → 試試加 `"async": true` 改成背景執行，再用 `agent_job_status` 查結果。

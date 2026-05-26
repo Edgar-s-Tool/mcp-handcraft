@@ -19,8 +19,9 @@ run_http.cmd     # HTTP MCP (遠端呼叫)
 
 ## 新增 key
 
-```bash
-doppler secrets set MY_API_KEY=<值>
+```powershell
+doppler secrets set MY_API_KEY --project handcraft-mcp --config prd
+# 在互動式 stdin 貼上值；不要把 secret 寫成 MY_API_KEY=真值
 ```
 
 或到 Doppler Web UI：https://dashboard.doppler.com
@@ -38,6 +39,7 @@ MY_KEY = os.getenv("MY_API_KEY")
 |------|------------|
 | `.env` 檔 | ❌ 不使用 |
 | git repo | ❌ 不進 git |
+| shell history / command line | ❌ 不把 token 或 key 當參數 |
 | Doppler 雲端 | ✅ 集中管理 |
 | server memory | 啟動時注入，不落地 |
 

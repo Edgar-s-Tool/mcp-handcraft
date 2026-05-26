@@ -85,10 +85,11 @@ CODEX_CMD = r"C:\Users\EdgarsTool\AppData\Roaming\npm\codex.cmd"
 CLAUDE_CMD = shutil.which("claude") or "claude"
 GEMINI_CMD = shutil.which("gemini") or "gemini"
 OLLAMA_CMD = r"C:\Users\EdgarsTool\AppData\Local\Programs\Ollama\ollama.exe"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 CODEX_DEFAULT_WORKDIR = r"C:\Users\EdgarsTool"
 AGENT_TIMEOUT_SECONDS = int(os.getenv("MCP_AGENT_TIMEOUT_SECONDS", "300"))
 
-PORT = 8765
+PORT = int(os.getenv("MCP_PORT", "8765"))
 PROTOCOL_VERSION = "2025-11-25"
 MCP_PATH = "/mcp"
 HEALTH_PATH = "/health"
@@ -556,6 +557,53 @@ TOOLS = [
                 "working_dir": {"type": "string", "description": f"Working directory (default: {CODEX_DEFAULT_WORKDIR})"},
             },
             "required": ["task"],
+        },
+    },
+    {
+        "name": "ollama_list_models",
+        "description": "List locally available Ollama models through the handcraft MCP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "ollama_generate",
+        "description": "Generate a completion from a local Ollama model through the handcraft MCP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Ollama model name."},
+                "prompt": {"type": "string", "description": "Prompt text."},
+                "system": {"type": "string", "description": "Optional system instruction."},
+            },
+            "required": ["model", "prompt"],
+        },
+    },
+    {
+        "name": "ollama_chat",
+        "description": "Run a chat completion against a local Ollama model through the handcraft MCP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Ollama model name."},
+                "messages": {
+                    "type": "array",
+                    "description": "Chat message list.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "enum": ["system", "user", "assistant", "tool"],
+                            },
+                            "content": {"type": "string"},
+                        },
+                        "required": ["role", "content"],
+                    },
+                },
+            },
+            "required": ["model", "messages"],
         },
     },
     # ── 檔案系統工具 ──────────────────────────────────────────────────────────
@@ -1153,6 +1201,14 @@ def make_tool_text_response(text: str, *, is_error: bool = False) -> dict:
     }
 
 
+def make_tool_json_response(data: dict, *, is_error: bool = False) -> dict:
+    return {
+        "content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}],
+        "structuredContent": data,
+        "isError": is_error,
+    }
+
+
 def make_www_authenticate_header(base_url: str, *, error: str | None = None, description: str | None = None) -> str:
     parts = [
         f'resource_metadata="{base_url.rstrip("/")}/.well-known/oauth-protected-resource"',
@@ -1732,6 +1788,12 @@ def handle_tools_call(req_id, params: dict) -> dict:
 
     if name == "ollama_agent":
         return handle_ollama_agent(req_id, arguments)
+    if name == "ollama_list_models":
+        return handle_ollama_list_models(req_id, arguments)
+    if name == "ollama_generate":
+        return handle_ollama_generate(req_id, arguments)
+    if name == "ollama_chat":
+        return handle_ollama_chat(req_id, arguments)
 
     # ── 檔案系統
     if name == "fs_list":
@@ -2615,6 +2677,71 @@ def handle_ollama_agent(req_id, arguments: dict) -> dict:
     task, working_dir = sync_args
     output, is_error = run_ollama_task(task, arguments.get("model", "qwen3.5:latest"), working_dir)
     return make_response(req_id, make_tool_text_response(output, is_error=is_error))
+
+
+def call_ollama_api(path: str, payload: dict | None = None, *, timeout: float = 120.0) -> dict:
+    url = f"{OLLAMA_HOST}{path}"
+    data = None
+    method = "GET"
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        method = "POST"
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read().decode("utf-8")
+        return json.loads(raw) if raw else {}
+
+
+def handle_ollama_list_models(req_id, arguments: dict) -> dict:  # pylint: disable=unused-argument
+    try:
+        result = call_ollama_api("/api/tags", timeout=30.0)
+        return make_response(req_id, make_tool_json_response(result))
+    except Exception as exc:
+        return make_response(req_id, make_tool_text_response(f"Error: {exc}", is_error=True))
+
+
+def handle_ollama_generate(req_id, arguments: dict) -> dict:
+    model = str(arguments.get("model", "")).strip()
+    prompt = str(arguments.get("prompt", "")).strip()
+    system_prompt = str(arguments.get("system", "")).strip()
+    if not model or not prompt:
+        return make_response(req_id, make_tool_text_response("Error: model and prompt are required", is_error=True))
+
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    if system_prompt:
+        payload["system"] = system_prompt
+
+    try:
+        result = call_ollama_api("/api/generate", payload, timeout=float(os.getenv("OLLAMA_MCP_TIMEOUT_SECONDS", "300")))
+        text = result.get("response", "")
+        response = make_tool_json_response(result)
+        response["content"] = [{"type": "text", "text": text}]
+        return make_response(req_id, response)
+    except Exception as exc:
+        return make_response(req_id, make_tool_text_response(f"Error: {exc}", is_error=True))
+
+
+def handle_ollama_chat(req_id, arguments: dict) -> dict:
+    model = str(arguments.get("model", "")).strip()
+    messages = arguments.get("messages")
+    if not model or not isinstance(messages, list):
+        return make_response(req_id, make_tool_text_response("Error: model and messages are required", is_error=True))
+
+    payload = {"model": model, "messages": messages, "stream": False}
+    try:
+        result = call_ollama_api("/api/chat", payload, timeout=float(os.getenv("OLLAMA_MCP_TIMEOUT_SECONDS", "300")))
+        message = result.get("message", {})
+        text = message.get("content", "") if isinstance(message, dict) else ""
+        response = make_tool_json_response(result)
+        response["content"] = [{"type": "text", "text": text}]
+        return make_response(req_id, response)
+    except Exception as exc:
+        return make_response(req_id, make_tool_text_response(f"Error: {exc}", is_error=True))
 
 
 # ─── File System Handlers ────────────────────────────────────────────────────

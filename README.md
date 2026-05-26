@@ -51,6 +51,12 @@ Invoke-RestMethod http://127.0.0.1:8765/health
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-HandcraftHealth.ps1
 ```
 
+需要驗證帶 Bearer token 的 `/mcp` 路徑時，不要把 token 寫進命令列。先讓 `MCP_API_TOKEN` 由 Doppler 或目前 shell 的環境變數提供，再用 wrapper 送 header：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-HandcraftMcp.ps1
+```
+
 ### 停止
 
 ```powershell
@@ -309,6 +315,7 @@ Templates/         ← 筆記模板
 ```powershell
 cd C:\Users\EdgarsTool\Projects\mcp-handcraft
 doppler run -- python -m unittest test_server_http.py -v
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-HandcraftSecureStartup.ps1
 ```
 
 ---
@@ -329,6 +336,7 @@ doppler run -- python -m unittest test_server_http.py -v
 | `TRACKTW_API_KEY` | TrackTW 物流查詢 |
 | `MCP_AGENT_TIMEOUT_SECONDS` | Agent 等待上限（預設 300 秒） |
 | `MCP_BASE_URL` | 公開 URL（預設 https://mcp.whoasked.vip） |
+| `MCP_PORT` | 本機 HTTP port（預設 8765；測試可覆蓋） |
 
 ---
 
@@ -377,6 +385,8 @@ https://mcp.whoasked.vip/webhook/linear
 這條不是 MCP endpoint。對方要「接 Linear webhook」時給 `/webhook/linear`。
 
 若 endpoint 需要 bearer token，設定 `HERMES_HANDCRAFT_MCP_TOKEN`；本檔不保存 token，也不要把 runtime log、`.screenshots/`、`__pycache__/` 或圖片檔 commit 進 repo。
+
+本 repo 內未保留 `gateway.cmd`；目前 HTTP / gateway 相關啟動路徑是 `run_http.cmd` 與 `scripts\Start-HandcraftStack.ps1`，兩者都走 Doppler/env 注入，不需要把 token 當參數傳入。手動探測 `/mcp` 時請使用 `scripts\Invoke-HandcraftMcp.ps1`，避免 `Authorization: Bearer ...` 出現在 shell history 或程序命令列。
 
 ---
 
