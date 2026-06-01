@@ -85,7 +85,8 @@ CODEX_CMD = r"C:\Users\EdgarsTool\AppData\Roaming\npm\codex.cmd"
 CLAUDE_CMD = shutil.which("claude") or "claude"
 GEMINI_CMD = shutil.which("gemini") or "gemini"
 OLLAMA_CMD = r"C:\Users\EdgarsTool\AppData\Local\Programs\Ollama\ollama.exe"
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_HOST_RAW = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
+OLLAMA_HOST = OLLAMA_HOST_RAW if OLLAMA_HOST_RAW.startswith(("http://", "https://")) else f"http://{OLLAMA_HOST_RAW}"
 CODEX_DEFAULT_WORKDIR = r"C:\Users\EdgarsTool"
 AGENT_TIMEOUT_SECONDS = int(os.getenv("MCP_AGENT_TIMEOUT_SECONDS", "300"))
 
