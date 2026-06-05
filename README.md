@@ -19,6 +19,8 @@ mcp-handcraft/
 ├── run_http.cmd        ← 啟動 HTTP server（透過 Doppler 注入 secrets）
 ├── scripts/
 │   ├── Start-HandcraftStack.ps1 ← 啟動/驗證 :8765 + cloudflared + public /mcp
+│   ├── Start-OpenAISecureMcpTunnel.ps1 ← 啟動 OpenAI Secure MCP Tunnel
+│   ├── Install-OpenAITunnelClient.ps1 ← 安裝 OpenAI tunnel-client
 │   └── Test-HandcraftHealth.ps1 ← 明確健康檢查
 └── test_server_http.py ← smoke test
 ```
@@ -35,6 +37,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-HandcraftSta
 ```
 
 這會先確認 `http://127.0.0.1:8765/health`，必要時用 Doppler 啟動 `server_http.py`；再確認 `cloudflared` 程序；最後檢查 `https://mcp.whoasked.vip/mcp` 是否回 200。
+
+### 啟動 OpenAI Secure MCP Tunnel（私有 MCP，不開公開入口）
+
+OpenAI Secure MCP Tunnel 會讓本機 `tunnel-client` 對 OpenAI 建立 outbound HTTPS 連線，再把 OpenAI 端的 MCP JSON-RPC 請求轉發到本機 `http://127.0.0.1:8765/mcp`。這條路徑不需要把本機 MCP server 暴露到 public internet。
+
+先在 OpenAI Platform tunnel settings 建立 / 選取 tunnel，取得 `tunnel_id`，並準備一把具備 Tunnels Read + Use 權限的 runtime API key。不要把 key 寫進 repo 或命令列歷史。
+
+```powershell
+cd C:\Users\EdgarsTool\Projects\mcp-handcraft
+$env:OPENAI_MCP_TUNNEL_ID = "tunnel_..."
+$env:CONTROL_PLANE_API_KEY = "sk-..."
+$env:MCP_API_TOKEN = "<local-mcp-bearer-token>"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-OpenAISecureMcpTunnel.ps1 -InstallIfMissing
+```
+
+只跑診斷、不啟動長跑 tunnel：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-OpenAISecureMcpTunnel.ps1 -DoctorOnly
+```
+
+這個腳本會確認本機 `:8765` 健康，必要時透過 Doppler 啟動 `server_http.py`，再用 `sample_mcp_remote_no_auth` profile 執行 `tunnel-client init`、`doctor` 和 `run`。本機 MCP bearer 會透過 `Authorization: env:MCP_API_TOKEN` 這類 env reference 傳給 `tunnel-client`，不寫入 profile。保持該 process 運作時，ChatGPT / Codex / API 端才可透過 tunnel 呼叫本機 MCP。
 
 ### 只啟動 HTTP server（透過 Doppler 注入 secrets）
 
@@ -76,6 +101,7 @@ Stop-Process -Id <OwningProcessId> -Force
 | Claude Code | `winget install Anthropic.ClaudeCode` + `claude auth login` |
 | Ollama | 本地模型執行環境 |
 | mmx CLI | MiniMax 媒體生成 |
+| OpenAI tunnel-client | OpenAI Secure MCP Tunnel 用；可由 `scripts\Install-OpenAITunnelClient.ps1` 安裝 |
 
 ---
 
@@ -221,8 +247,8 @@ C:\Users\EdgarsTool\Projects\mcp-handcraft\reports
 | 工具 | 說明 |
 |------|------|
 | `linear_issues` | 列出 issues（可篩選狀態/優先級） |
-| `linear_create_issue` | 建立新 issue |
-| `linear_update_issue` | 更新 issue 狀態或新增留言 |
+| `linear_create_issue` | 建立新 issue，並重新查詢確認 issue 已建立 |
+| `linear_update_issue` | 更新 issue 狀態或新增留言，並重新查詢確認狀態/留言已落地 |
 
 ---
 
@@ -267,8 +293,8 @@ Vault 路徑：`D:\Edgar'sObsidianVault`
 | 工具 | 說明 |
 |------|------|
 | `vault_read` | 讀取筆記內容 |
-| `vault_write` | 建立或覆蓋筆記 |
-| `vault_append` | 在筆記末尾附加內容 |
+| `vault_write` | 建立或覆蓋筆記，寫入後讀回確認內容 |
+| `vault_append` | 在筆記末尾附加內容，附加後讀回確認內容 |
 | `vault_list` | 列出資料夾內容 |
 | `vault_search` | 全文搜尋所有筆記 |
 | `vault_delete` | 刪除筆記（移到 .trash，可復原） |
@@ -347,6 +373,8 @@ https://mcp.whoasked.vip/mcp
 ```
 
 透過 Cloudflare Tunnel 對外。本機重開機後需手動重啟 cloudflared。
+
+OpenAI Secure MCP Tunnel 是另一條私有路徑：`tunnel-client` 從本機 outbound 連到 OpenAI，OpenAI 產品透過 OpenAI-hosted tunnel endpoint 呼叫本機 MCP。它不需要 `mcp.whoasked.vip`，也不需要開 inbound firewall port。
 
 ### Hermes stdio proxy
 

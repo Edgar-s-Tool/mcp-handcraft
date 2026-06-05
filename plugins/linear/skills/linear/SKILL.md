@@ -19,8 +19,9 @@ Use this skill to keep Linear work tied to the current repo state instead of tre
    - `git status --short --branch`
 2. Identify whether the user wants read-only review, a new issue, an issue update, or a handoff note.
 3. Use read-only operations first. In mcp-handcraft, `linear_issues` is read-only; `linear_create_issue` and `linear_update_issue` change Linear.
-4. For write operations, keep changes scoped to the active task. If the repo has unrelated dirty files, mention them and do not include them in the Linear update unless the user explicitly asks.
-5. Summarize exactly what changed in Linear and what still needs human or follow-up agent action.
+4. For write operations, require a verified write flow: preflight read, minimal write, read-back verification, then a concise closeout.
+5. For write operations, keep changes scoped to the active task. If the repo has unrelated dirty files, mention them and do not include them in the Linear update unless the user explicitly asks.
+6. Summarize exactly what changed in Linear and what still needs human or follow-up agent action.
 
 ## Tool Map
 
@@ -98,6 +99,16 @@ Keep handoffs actionable; avoid project history unless it changes the next actio
 - Do not create broad new workstreams without an explicit user task or a clear existing WHO issue.
 - Do not merge, force push, reset, deploy, delete, or move files as part of a Linear update.
 - Treat `D:\Agent-KB` as source-of-truth context, not scratchpad output.
+- Treat `[BLOCKED] ... Reason:` from mcp-handcraft as an authoritative failed write report. Do not claim Linear changed unless the tool reports read-back verification.
+
+## Verified Write Closeout
+
+When `linear_create_issue` or `linear_update_issue` succeeds through mcp-handcraft, expect the tool to confirm read-back verification. If it returns `[BLOCKED]`, report:
+
+- target issue or title
+- reason text from the tool
+- what was attempted
+- whether any partial write may need human inspection
 
 ## Final Response Shape
 

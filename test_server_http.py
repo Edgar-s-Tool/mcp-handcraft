@@ -277,6 +277,21 @@ class OAuthFlowTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=5)
 
+    def test_resource_metadata_supports_mcp_path_alias_for_tunnel_client(self):
+        server, thread, base = self._start_server()
+        try:
+            with urllib.request.urlopen(f"{base}/.well-known/oauth-protected-resource/mcp", timeout=5) as response:
+                metadata = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual("https://mcp.example.test/mcp", metadata["resource"])
+            self.assertEqual(["https://mcp.example.test"], metadata["authorization_servers"])
+            self.assertEqual(["mcp"], metadata["scopes_supported"])
+            self.assertEqual("https://mcp.example.test/mcp", metadata["resource_documentation"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_mcp_unauthorized_advertises_resource_metadata(self):
         server, thread, base = self._start_server()
         try:
@@ -410,6 +425,67 @@ class OAuthFlowTests(unittest.TestCase):
 
             tool_names = [tool["name"] for tool in tools_payload["result"]["tools"]]
             self.assertIn("fs_disk_info", tool_names)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_authorization_code_confidential_client_flow_allows_missing_pkce(self):
+        server, thread, base = self._start_server()
+        try:
+            redirect_uri = "https://chatgpt.com/connector/oauth/callback-test"
+            register_body = json.dumps({
+                "client_name": "ChatGPT",
+                "redirect_uris": [redirect_uri],
+            }).encode("utf-8")
+            register_req = urllib.request.Request(
+                f"{base}/register",
+                data=register_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(register_req, timeout=5) as response:
+                registered = json.loads(response.read().decode("utf-8"))
+            client_id = registered["client_id"]
+            client_secret = registered["client_secret"]
+
+            authorize_query = urllib.parse.urlencode({
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": "mcp",
+                "resource": "https://mcp.example.test/mcp",
+                "state": "state-2",
+            })
+            opener = urllib.request.build_opener(NoRedirectHandler)
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                opener.open(f"{base}/authorize?{authorize_query}", timeout=5)
+            self.assertEqual(302, raised.exception.code)
+            location = raised.exception.headers["Location"]
+            redirected_query = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
+            self.assertEqual(["state-2"], redirected_query["state"])
+            code = redirected_query["code"][0]
+
+            token_body = urllib.parse.urlencode({
+                "grant_type": "authorization_code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code": code,
+                "resource": "https://mcp.example.test/mcp",
+                "client_secret": client_secret,
+            }).encode("utf-8")
+            token_req = urllib.request.Request(
+                f"{base}/token",
+                data=token_body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urllib.request.urlopen(token_req, timeout=5) as response:
+                token_payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual("Bearer", token_payload["token_type"])
+            self.assertEqual("mcp", token_payload["scope"])
+            self.assertTrue(token_payload["access_token"])
         finally:
             server.shutdown()
             server.server_close()
@@ -670,6 +746,151 @@ class TrackTWTests(unittest.TestCase):
                 names = set(zf.namelist())
             self.assertIn("xl/worksheets/sheet1.xml", names)
             self.assertIn("xl/worksheets/sheet2.xml", names)
+
+
+class SafeMcpWriteTests(unittest.TestCase):
+    def test_vault_write_reads_back_and_reports_verified_write(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(server_http, "VAULT_ROOT", Path(tmpdir)):
+                response = server_http.handle_vault_write(
+                    req_id=1,
+                    arguments={"path": "Inbox/test.md", "content": "hello"},
+                )
+
+                self.assertFalse(tool_is_error(response))
+                self.assertIn("Written and verified: Inbox/test.md", tool_text(response))
+                self.assertEqual("hello", Path(tmpdir, "Inbox", "test.md").read_text(encoding="utf-8"))
+
+    def test_vault_append_reads_back_and_reports_verified_append(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            note = Path(tmpdir, "Inbox", "test.md")
+            note.parent.mkdir(parents=True)
+            note.write_text("before", encoding="utf-8")
+            with patch.object(server_http, "VAULT_ROOT", Path(tmpdir)):
+                response = server_http.handle_vault_append(
+                    req_id=1,
+                    arguments={"path": "Inbox/test.md", "content": "after"},
+                )
+
+                self.assertFalse(tool_is_error(response))
+                self.assertIn("Appended and verified: Inbox/test.md", tool_text(response))
+                self.assertEqual("before\nafter", note.read_text(encoding="utf-8"))
+
+    def test_linear_graphql_errors_are_reported_as_blocked_reason(self):
+        with patch.object(
+            server_http,
+            "_linear_graphql",
+            side_effect=server_http.LinearMcpError("Invalid API key"),
+        ):
+            response = server_http.handle_linear_create_issue(
+                req_id=1,
+                arguments={"title": "Safe MCP test"},
+            )
+
+        self.assertTrue(tool_is_error(response))
+        text = tool_text(response)
+        self.assertIn("[BLOCKED] Linear issue create failed", text)
+        self.assertIn("Reason: Invalid API key", text)
+
+    def test_linear_create_issue_verifies_created_issue_by_refetch(self):
+        calls = []
+
+        def fake_linear_graphql(query, variables=None):
+            calls.append((query, variables))
+            if "teams" in query:
+                return {"data": {"teams": {"nodes": [{"id": "team-1", "name": "WHO"}]}}}
+            if "issueCreate" in query:
+                return {
+                    "data": {
+                        "issueCreate": {
+                            "issue": {
+                                "identifier": "WHO-123",
+                                "title": variables["title"],
+                                "url": "https://linear.app/issue/WHO-123",
+                            }
+                        }
+                    }
+                }
+            return {
+                "data": {
+                    "issues": {
+                        "nodes": [
+                            {
+                                "id": "issue-uuid",
+                                "identifier": "WHO-123",
+                                "title": "Safe MCP test",
+                                "url": "https://linear.app/issue/WHO-123",
+                                "state": {"name": "Todo"},
+                                "team": {"states": {"nodes": []}},
+                            }
+                        ]
+                    }
+                }
+            }
+
+        with patch.object(server_http, "_linear_graphql", side_effect=fake_linear_graphql):
+            response = server_http.handle_linear_create_issue(
+                req_id=1,
+                arguments={"title": "Safe MCP test", "team_name": "WHO"},
+            )
+
+        self.assertFalse(tool_is_error(response))
+        self.assertIn("Created and verified: [WHO-123] Safe MCP test", tool_text(response))
+        self.assertEqual(3, len(calls))
+
+    def test_linear_update_issue_verifies_state_and_comment(self):
+        def fake_linear_graphql(query, variables=None):
+            if "issueUpdate" in query:
+                return {"data": {"issueUpdate": {"issue": {"identifier": "WHO-123", "state": {"name": "Done"}}}}}
+            if "commentCreate" in query:
+                return {"data": {"commentCreate": {"comment": {"id": "comment-1", "body": variables["body"]}}}}
+            if "comments(last: 5)" in query:
+                return {
+                    "data": {
+                        "issues": {
+                            "nodes": [
+                                {
+                                    "id": "issue-uuid",
+                                    "identifier": "WHO-123",
+                                    "title": "Safe MCP test",
+                                    "url": "https://linear.app/issue/WHO-123",
+                                    "state": {"name": "Done"},
+                                    "team": {"states": {"nodes": [{"id": "done-id", "name": "Done"}]}},
+                                    "comments": {"nodes": [{"id": "comment-1", "body": "verified", "createdAt": "now"}]},
+                                }
+                            ]
+                        }
+                    }
+                }
+            return {
+                "data": {
+                    "issues": {
+                        "nodes": [
+                            {
+                                "id": "issue-uuid",
+                                "identifier": "WHO-123",
+                                "title": "Safe MCP test",
+                                "url": "https://linear.app/issue/WHO-123",
+                                "state": {"name": "Todo"},
+                                "team": {"states": {"nodes": [{"id": "done-id", "name": "Done"}]}},
+                            }
+                        ]
+                    }
+                }
+            }
+
+        with patch.object(server_http, "_linear_graphql", side_effect=fake_linear_graphql):
+            response = server_http.handle_linear_update_issue(
+                req_id=1,
+                arguments={"issue_id": "WHO-123", "state": "Done", "comment": "verified"},
+            )
+
+        self.assertFalse(tool_is_error(response))
+        text = tool_text(response)
+        self.assertIn("State updated", text)
+        self.assertIn("Comment added", text)
+        self.assertIn("Verified state: Done", text)
+        self.assertIn("Verified comment: comment-1", text)
 
 
 class ClaudeCodeAgentSmokeTests(unittest.TestCase):

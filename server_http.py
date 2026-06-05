@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import secrets
 import urllib.parse
+import urllib.error
 import urllib.request
 import fnmatch
 import platform
@@ -1210,6 +1211,18 @@ def make_tool_json_response(data: dict, *, is_error: bool = False) -> dict:
     }
 
 
+class SafeMcpWriteError(RuntimeError):
+    pass
+
+
+class LinearMcpError(RuntimeError):
+    pass
+
+
+def format_safe_mcp_failure(action: str, target: str, reason: str) -> str:
+    return f"[BLOCKED] {action} failed\nTarget: {target}\nReason: {reason}"
+
+
 def make_www_authenticate_header(base_url: str, *, error: str | None = None, description: str | None = None) -> str:
     parts = [
         f'resource_metadata="{base_url.rstrip("/")}/.well-known/oauth-protected-resource"',
@@ -2162,6 +2175,8 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             self._handle_oauth_metadata()
         elif path == "/.well-known/oauth-protected-resource":
             self._handle_resource_metadata()
+        elif path == "/.well-known/oauth-protected-resource/mcp":
+            self._handle_resource_metadata(resource_path=MCP_PATH)
         elif path == "/authorize":
             self._handle_authorize(parsed.query)
         elif path == HEALTH_PATH:
@@ -2227,10 +2242,11 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             "subject_types_supported": ["public"],
         })
 
-    def _handle_resource_metadata(self) -> None:
-        base_url = self.server.config.base_url
+    def _handle_resource_metadata(self, resource_path: str = "") -> None:
+        base_url = self.server.config.base_url.rstrip("/")
+        resource = f"{base_url}{resource_path}" if resource_path else base_url
         self._send_oauth_json({
-            "resource": base_url,
+            "resource": resource,
             "authorization_servers": [base_url],
             "scopes_supported": [OAUTH_SCOPE],
             "bearer_methods_supported": ["header"],
@@ -2275,7 +2291,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         scope = params.get("scope", [OAUTH_SCOPE])[0] or OAUTH_SCOPE
         resource = params.get("resource", [""])[0]
         code_challenge = params.get("code_challenge", [""])[0]
-        code_challenge_method = params.get("code_challenge_method", [""])[0] or "S256"
+        code_challenge_method = params.get("code_challenge_method", [""])[0]
 
         client = get_oauth_client(client_id)
         if response_type != "code":
@@ -2287,8 +2303,13 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         if not redirect_uri or not oauth_redirect_uri_allowed(client, redirect_uri):
             self._send_oauth_json(oauth_error("invalid_request", "redirect_uri is missing or not registered"), 400)
             return
-        if code_challenge_method != "S256" or not code_challenge:
-            self._send_oauth_json(oauth_error("invalid_request", "PKCE S256 code_challenge is required"), 400)
+        if code_challenge:
+            code_challenge_method = code_challenge_method or "S256"
+            if code_challenge_method != "S256":
+                self._send_oauth_json(oauth_error("invalid_request", "PKCE S256 code_challenge is required"), 400)
+                return
+        elif not client.get("client_secret"):
+            self._send_oauth_json(oauth_error("invalid_request", "PKCE S256 code_challenge is required for public clients"), 400)
             return
         if scope and OAUTH_SCOPE not in scope.split():
             self._send_oauth_json(oauth_error("invalid_scope", f"scope must include {OAUTH_SCOPE}"), 400)
@@ -2358,13 +2379,14 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             if entry.get("resource") and resource and resource != entry.get("resource"):
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "resource mismatch"}, 400)
                 return
-            if not pkce_verifier_matches(
-                code_verifier,
-                entry.get("code_challenge", ""),
-                entry.get("code_challenge_method", ""),
-            ):
-                self._send_oauth_json({"error": "invalid_grant", "error_description": "PKCE verification failed"}, 400)
-                return
+            if entry.get("code_challenge"):
+                if not pkce_verifier_matches(
+                    code_verifier,
+                    entry.get("code_challenge", ""),
+                    entry.get("code_challenge_method", ""),
+                ):
+                    self._send_oauth_json({"error": "invalid_grant", "error_description": "PKCE verification failed"}, 400)
+                    return
             entry["used"] = True
             scope = entry.get("scope", OAUTH_SCOPE)
 
@@ -3086,6 +3108,27 @@ def _vault_path(rel: str) -> Path:
     return p
 
 
+def _verified_vault_write(path: Path, content: str) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    verified = path.read_text(encoding="utf-8", errors="replace")
+    if verified != content:
+        raise SafeMcpWriteError("read-back content did not match written content")
+    return path.stat().st_size
+
+
+def _verified_vault_append(path: Path, content: str) -> int:
+    before = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+    expected = before + "\n" + content
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("\n" + content)
+    verified = path.read_text(encoding="utf-8", errors="replace")
+    if verified != expected:
+        raise SafeMcpWriteError("read-back content did not match appended content")
+    return path.stat().st_size
+
+
 def handle_vault_read(req_id, arguments: dict) -> dict:
     path = arguments.get("path", "").strip()
     if not path:
@@ -3107,11 +3150,18 @@ def handle_vault_write(req_id, arguments: dict) -> dict:
         return make_response(req_id, make_tool_text_response("Error: path is required", is_error=True))
     try:
         p = _vault_path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
-        return make_response(req_id, make_tool_text_response(f"Written: {path} ({p.stat().st_size:,} bytes)"))
+        size = _verified_vault_write(p, content)
+        return make_response(req_id, make_tool_text_response(
+            f"Written and verified: {path} ({size:,} bytes)"
+        ))
+    except SafeMcpWriteError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_write", path, str(e)), is_error=True
+        ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_write", path, str(e)), is_error=True
+        ))
 
 
 def handle_vault_append(req_id, arguments: dict) -> dict:
@@ -3121,12 +3171,18 @@ def handle_vault_append(req_id, arguments: dict) -> dict:
         return make_response(req_id, make_tool_text_response("Error: path is required", is_error=True))
     try:
         p = _vault_path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "a", encoding="utf-8") as f:
-            f.write("\n" + content)
-        return make_response(req_id, make_tool_text_response(f"Appended to: {path}"))
+        size = _verified_vault_append(p, content)
+        return make_response(req_id, make_tool_text_response(
+            f"Appended and verified: {path} ({size:,} bytes)"
+        ))
+    except SafeMcpWriteError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_append", path, str(e)), is_error=True
+        ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_append", path, str(e)), is_error=True
+        ))
 
 
 def handle_vault_list(req_id, arguments: dict) -> dict:
@@ -3260,12 +3316,18 @@ tags:
 - **明天優先：**
 """
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        _verified_vault_write(p, content)
         return make_response(req_id, make_tool_text_response(
             f"Daily note created: {rel_path}\n---\n{content}"
         ))
+    except SafeMcpWriteError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_daily_note", rel_path, str(e)), is_error=True
+        ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_daily_note", date_str, str(e)), is_error=True
+        ))
 
 
 def handle_vault_recent(req_id, arguments: dict) -> dict:
@@ -3661,12 +3723,18 @@ def handle_vault_create_from_template(req_id, arguments: dict) -> dict:
 
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        _verified_vault_write(p, content)
         return make_response(req_id, make_tool_text_response(
             f"Created from template '{match}': {rel_path}\n---\n{content}"
         ))
+    except SafeMcpWriteError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_create_from_template", rel_path, str(e)), is_error=True
+        ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Obsidian vault_create_from_template", rel_path, str(e)), is_error=True
+        ))
 
 
 # ─── Vault Sort Inbox ─────────────────────────────────────────────────────────
@@ -4548,7 +4616,7 @@ def handle_web_search(req_id, arguments: dict) -> dict:
 
 def _linear_graphql(query: str, variables: dict | None = None) -> dict:
     if not LINEAR_API_KEY:
-        raise ValueError("LINEAR_API_KEY not set in Doppler")
+        raise LinearMcpError("LINEAR_API_KEY not set in Doppler")
     payload = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
     req = urllib.request.Request(
         "https://api.linear.app/graphql",
@@ -4558,8 +4626,46 @@ def _linear_graphql(query: str, variables: dict | None = None) -> dict:
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise LinearMcpError(f"Linear HTTP {e.code}: {body[:500]}") from e
+    except urllib.error.URLError as e:
+        raise LinearMcpError(f"Linear connection failed: {e.reason}") from e
+    except json.JSONDecodeError as e:
+        raise LinearMcpError(f"Linear returned invalid JSON: {e}") from e
+
+    errors = data.get("errors")
+    if errors:
+        reasons = []
+        for err in errors:
+            if isinstance(err, dict):
+                reasons.append(str(err.get("message") or err))
+            else:
+                reasons.append(str(err))
+        raise LinearMcpError("; ".join(reasons))
+    return data
+
+
+def _linear_issue_by_identifier(identifier: str, *, include_comments: bool = False) -> dict | None:
+    comments = "comments(last: 5) { nodes { id body createdAt } }" if include_comments else ""
+    query = f"""
+    query {{
+        issues(filter: {{ identifier: "{{{identifier}}}" }} first: 1) {{
+            nodes {{
+                id identifier title url
+                state {{ name }}
+                team {{ states {{ nodes {{ id name }} }} }}
+                {comments}
+            }}
+        }}
+    }}
+    """
+    data = _linear_graphql(query)
+    nodes = data["data"]["issues"]["nodes"]
+    return nodes[0] if nodes else None
 
 
 def handle_linear_issues(req_id, arguments: dict) -> dict:
@@ -4569,9 +4675,9 @@ def handle_linear_issues(req_id, arguments: dict) -> dict:
     try:
         filter_parts = []
         if state:
-            filter_parts.append(f'state: {{ name: {{ eq: "{state}" }} }}')
+            filter_parts.append(f'state: "{{ name: \"{state}\" }}"')
         if assignee_me:
-            filter_parts.append('assignee: { isMe: { eq: true } }')
+            filter_parts.append('assignee: { isMe: true }')
         filter_clause = f"filter: {{ {', '.join(filter_parts)} }}" if filter_parts else ""
         gql = f"""
         query {{
@@ -4635,11 +4741,32 @@ def handle_linear_create_issue(req_id, arguments: dict) -> dict:
             "description": description or None, "priority": priority,
         })
         iss = result["data"]["issueCreate"]["issue"]
+        verified = _linear_issue_by_identifier(iss["identifier"])
+        if not verified:
+            return make_response(req_id, make_tool_text_response(
+                format_safe_mcp_failure("Linear issue create", title, "created issue could not be re-fetched"),
+                is_error=True,
+            ))
+        if verified["title"] != title:
+            return make_response(req_id, make_tool_text_response(
+                format_safe_mcp_failure(
+                    "Linear issue create",
+                    iss["identifier"],
+                    f"read-back title mismatch: expected {title!r}, got {verified['title']!r}",
+                ),
+                is_error=True,
+            ))
         return make_response(req_id, make_tool_text_response(
-            f"Created: [{iss['identifier']}] {iss['title']}\nURL: {iss['url']}"
+            f"Created and verified: [{verified['identifier']}] {verified['title']}\nURL: {verified['url']}"
+        ))
+    except LinearMcpError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Linear issue create", title or "(missing title)", str(e)), is_error=True
         ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Linear issue create", title or "(missing title)", str(e)), is_error=True
+        ))
 
 
 def handle_linear_update_issue(req_id, arguments: dict) -> dict:
@@ -4651,18 +4778,9 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
     try:
         results = []
         # Resolve issue UUID from identifier
-        find_q = f"""
-        query {{
-            issues(filter: {{ identifier: {{ eq: "{issue_id}" }} }} first: 1) {{
-                nodes {{ id identifier title team {{ states {{ nodes {{ id name }} }} }} }}
-            }}
-        }}
-        """
-        data = _linear_graphql(find_q)
-        nodes = data["data"]["issues"]["nodes"]
-        if not nodes:
+        iss = _linear_issue_by_identifier(issue_id)
+        if not iss:
             return make_response(req_id, make_tool_text_response(f"Issue not found: {issue_id}", is_error=True))
-        iss = nodes[0]
         iss_uuid = iss["id"]
 
         if state_name:
@@ -4688,21 +4806,60 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
             comment_m = """
             mutation AddComment($issueId: String!, $body: String!) {
                 commentCreate(input: { issueId: $issueId, body: $body }) {
-                    comment { id }
+                    comment { id body }
                 }
             }
             """
-            _linear_graphql(comment_m, {"issueId": iss_uuid, "body": comment})
+            comment_result = _linear_graphql(comment_m, {"issueId": iss_uuid, "body": comment})
+            comment_id = comment_result["data"]["commentCreate"]["comment"]["id"]
             results.append("Comment added")
 
         if not results:
             return make_response(req_id, make_tool_text_response("Nothing to update (provide state or comment)"))
 
+        verified = _linear_issue_by_identifier(issue_id, include_comments=bool(comment))
+        if not verified:
+            return make_response(req_id, make_tool_text_response(
+                format_safe_mcp_failure("Linear issue update", issue_id, "updated issue could not be re-fetched"),
+                is_error=True,
+            ))
+        verification = []
+        if state_name:
+            verified_state = verified["state"]["name"]
+            if verified_state != updated["state"]["name"]:
+                return make_response(req_id, make_tool_text_response(
+                    format_safe_mcp_failure(
+                        "Linear issue update",
+                        issue_id,
+                        f"state read-back mismatch: expected {updated['state']['name']!r}, got {verified_state!r}",
+                    ),
+                    is_error=True,
+                ))
+            verification.append(f"Verified state: {verified_state}")
+        if comment:
+            comment_nodes = verified.get("comments", {}).get("nodes", [])
+            if not any(node.get("id") == comment_id for node in comment_nodes):
+                return make_response(req_id, make_tool_text_response(
+                    format_safe_mcp_failure(
+                        "Linear issue update",
+                        issue_id,
+                        "created comment was not present in recent comments read-back",
+                    ),
+                    is_error=True,
+                ))
+            verification.append(f"Verified comment: {comment_id}")
+
         return make_response(req_id, make_tool_text_response(
-            f"[{issue_id}] {iss['title']}\n" + "\n".join(results)
+            f"[{issue_id}] {iss['title']}\n" + "\n".join(results + verification)
+        ))
+    except LinearMcpError as e:
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Linear issue update", issue_id, str(e)), is_error=True
         ))
     except Exception as e:
-        return make_response(req_id, make_tool_text_response(f"Error: {e}", is_error=True))
+        return make_response(req_id, make_tool_text_response(
+            format_safe_mcp_failure("Linear issue update", issue_id, str(e)), is_error=True
+        ))
 
 
 if __name__ == "__main__":
