@@ -1,0 +1,25 @@
+[     467ms] [LOG] %c __                                               _____          __          __           ______          v1.65471.0
+/\ \       __                                    /\  __`\       /\ \      __/\ \__       /\__  _\                       
+\ \ \     /\_\    ___      __     __     _ __    \ \ \/\ \  _ __\ \ \____/\_\ \ ,_\      \/_/\ \/     ___     ___       
+ \ \ \  __\/\ \ /' _ `\  /'__`\ /'__`\  /\`'__\   \ \ \ \ \/\`'__\ \ '__`\/\ \ \ \/         \ \ \   /' _ `\  /'___\     
+  \ \ \L\ \\ \ \/\ \/\ \/\  __//\ \L\.\_\ \ \/     \ \ \_\ \ \ \/ \ \ \L\ \ \ \ \ \_  __     \_\ \__/\ \/\ \/\ \__/  __ 
+   \ \____/ \ \_\ \_\ \_\ \____\ \__/.\_\\ \_\      \ \_____\ \_\  \ \_,__/\ \_\ \__\/\ \    /\_____\ \_\ \_\ \____\/\_\
+    \/___/   \/_/\/_/\/_/\/____/\/__/\/_/ \/_/       \/_____/\/_/   \/___/  \/_/\/__/\ \/    \/_____/\/_/\/_/\/____/\/_/
+                                                                                      \/
+
+The product development system for teams and agents
+
+WE'RE HIRING: https://linear.app/careers
+CHANGELOG:    https://linear.app/changelog
+ 
+  font-family: monospace;
+  color: #282A30;
+   @ https://static.linear.app/client/assets/vendor-sentry.djDVAJCa.js:5
+[  153641ms] [ERROR] Error executing mutation oauthClientCreate ClientError: Argument Validation Error
+    at Er (https://static.linear.app/client/assets/Logger.CD6p3YOB.js:15:37769)
+    at https://static.linear.app/client/assets/store.ROZHentH.js:246:7556
+    at async e.mutate (https://static.linear.app/client/assets/store.ROZHentH.js:246:7465)
+    at async Z8.execute (https://static.linear.app/client/assets/store.ROZHentH.js:253:160165)
+    at async e.executeTransactionBatch (https://static.linear.app/client/assets/store.ROZHentH.js:253:171891) {query: mutation OauthClientCreate($oauthClientCreateInput…(input: $oauthClientCreateInput) { lastSyncId } }, variables: Object, statusCode: 200} @ https://static.linear.app/client/assets/vendor-sentry.djDVAJCa.js:5
+[  297961ms] [ERROR] Connecting to 'http://127.0.0.1:18765/' violates the following Content Security Policy directive: "connect-src 'self' https://o415358.ingest.sentry.io/api/5337513/ https://o415358.ingest.sentry.io/api/4504277957279744/ wss://ornj730p.api.sanity.io/ https://ornj730p.apicdn.sanity.io/ https://*.linear.app https://9RXBCYQ6DV-dsn.algolia.net https://linearstatus.com/ https://statuspage.incident.io/ https://app.posthog.com https://api.github.com/ https://raw.githubusercontent.com/ https://www.githubstatus.com/ https://dns.google/ http://127.0.0.1:44450/ http://127.0.0.1:18450/ http://127.0.0.1:33234/ https://api.linear.app https://client-api.linear.app wss://sync.linear.app/ https://storage.googleapis.com/uploads.linear.app/ https://storage.googleapis.com/linear-uploads-europe-west1/ https://storage.googleapis.com/linear-uploads-us-central1/ https://storage.googleapis.com/imports.linear.app/ https://storage.googleapis.com/linear-imports-europe-west1/ https://storage.googleapis.com/linear-imports-us-central1/ https://storage.googleapis.com/public.linear.app/ https://ornj730p.api.sanity.io/". The action has been blocked. @ https://static.linear.app/client/assets/vendor-sentry.djDVAJCa.js:5
+[  297962ms] [ERROR] Fetch API cannot load http://127.0.0.1:18765/. Refused to connect because it violates the document's Content Security Policy. @ https://static.linear.app/client/assets/vendor-sentry.djDVAJCa.js:5

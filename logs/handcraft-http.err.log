@@ -1,0 +1,7 @@
+[MCP-HTTP] handcraft-mcp HTTP server starting
+[MCP-HTTP] Protocol : 2025-11-25
+[MCP-HTTP] Health  : GET  http://localhost:8765/health
+[MCP-HTTP] Endpoint : POST http://localhost:8765/mcp
+[MCP-HTTP] Webhook : POST http://localhost:8765/webhook/package
+[MCP-HTTP] Webhook : POST http://localhost:8765/webhook/linear
+[MCP-HTTP] Allowed origins: {'mcp.whoasked.vip', '127.0.0.1', 'localhost'}

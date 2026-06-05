@@ -1,0 +1,37 @@
+{
+    "ok":  true,
+    "local_base_url":  "http://127.0.0.1:8765",
+    "public_mcp_url":  "https://mcp.whoasked.vip/mcp",
+    "checked_at":  "2026-06-05T18:56:38.1717442+08:00",
+    "checks":  [
+                   {
+                       "name":  "port_8765_listening",
+                       "ok":  true,
+                       "port":  8765
+                   },
+                   {
+                       "name":  "local_health",
+                       "ok":  true,
+                       "status":  200,
+                       "uri":  "http://127.0.0.1:8765/health"
+                   },
+                   {
+                       "name":  "cloudflared_process",
+                       "ok":  true
+                   },
+                   {
+                       "name":  "cloudflared_command",
+                       "ok":  true
+                   },
+                   {
+                       "name":  "doppler_command",
+                       "ok":  true
+                   },
+                   {
+                       "name":  "public_mcp_get",
+                       "ok":  true,
+                       "status":  200,
+                       "uri":  "https://mcp.whoasked.vip/mcp"
+                   }
+               ]
+}

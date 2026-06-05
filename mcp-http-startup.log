@@ -1,0 +1,29 @@
+[2026-05-23 12:39:02] Port 8765 already listening; skip startup.
+[2026-05-23 13:51:09] Started handcraft MCP HTTP via run_http.cmd.
+[2026-05-25 12:22:43] Started handcraft MCP HTTP via run_http.cmd.
+[2026-05-25 19:19:00] Startup failed: This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same. Give different inputs and Run your command again.
+[2026-05-25 19:19:16] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-25 20:55:02] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-26 05:50:50] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-27 05:21:43] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-27 09:50:06] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-27 10:43:05] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-28 10:13:17] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-29 01:59:11] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-29 02:08:48] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-30 05:06:19] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-31 03:45:36] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-05-31 15:15:05] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-01 15:32:36] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-02 05:35:13] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-02 12:32:58] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-02 13:41:22] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-02 18:49:41] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-03 16:35:15] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-04 05:21:49] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-04 07:04:31] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-04 19:10:48] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-04 19:23:46] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-04 19:27:11] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-05 13:53:42] Started handcraft stack via Start-HandcraftStack.ps1.
+[2026-06-05 18:56:32] Started handcraft stack via Start-HandcraftStack.ps1.
