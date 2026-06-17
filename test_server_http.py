@@ -838,6 +838,64 @@ class SafeMcpWriteTests(unittest.TestCase):
         self.assertIn("Created and verified: [WHO-123] Safe MCP test", tool_text(response))
         self.assertEqual(3, len(calls))
 
+    def test_linear_issue_lookup_uses_team_key_and_number_filter_for_identifier(self):
+        captured = {}
+
+        def fake_linear_graphql(query, variables=None):
+            captured["query"] = query
+            captured["variables"] = variables
+            return {
+                "data": {
+                    "issues": {
+                        "nodes": [
+                            {
+                                "id": "issue-uuid",
+                                "identifier": "WHO-123",
+                                "title": "Safe MCP test",
+                                "url": "https://linear.app/issue/WHO-123",
+                                "state": {"name": "Todo"},
+                                "team": {"states": {"nodes": []}},
+                            }
+                        ]
+                    }
+                }
+            }
+
+        with patch.object(server_http, "_linear_graphql", side_effect=fake_linear_graphql):
+            issue = server_http._linear_issue_by_identifier("WHO-123")
+
+        self.assertEqual("WHO-123", issue["identifier"])
+        self.assertIn("team: { key: { eqIgnoreCase: $teamKey } }", captured["query"])
+        self.assertIn("number: { eq: $issueNumber }", captured["query"])
+        self.assertEqual({"teamKey": "WHO", "issueNumber": 123}, captured["variables"])
+
+    def test_linear_issue_lookup_uses_uuid_query_for_uuid_input(self):
+        captured = {}
+
+        def fake_linear_graphql(query, variables=None):
+            captured["query"] = query
+            captured["variables"] = variables
+            return {
+                "data": {
+                    "issue": {
+                        "id": variables["id"],
+                        "identifier": "WHO-123",
+                        "title": "Safe MCP test",
+                        "url": "https://linear.app/issue/WHO-123",
+                        "state": {"name": "Todo"},
+                        "team": {"states": {"nodes": []}},
+                    }
+                }
+            }
+
+        with patch.object(server_http, "_linear_graphql", side_effect=fake_linear_graphql):
+            issue = server_http._linear_issue_by_identifier("123e4567-e89b-12d3-a456-426614174000")
+
+        self.assertEqual("WHO-123", issue["identifier"])
+        self.assertIn("query LinearIssueByUuid", captured["query"])
+        self.assertEqual({"id": "123e4567-e89b-12d3-a456-426614174000"}, captured["variables"])
+
+
     def test_linear_update_issue_verifies_state_and_comment(self):
         def fake_linear_graphql(query, variables=None):
             if "issueUpdate" in query:

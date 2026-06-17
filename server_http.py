@@ -4650,22 +4650,56 @@ def _linear_graphql(query: str, variables: dict | None = None) -> dict:
 
 
 def _linear_issue_by_identifier(identifier: str, *, include_comments: bool = False) -> dict | None:
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return None
+
     comments = "comments(last: 5) { nodes { id body createdAt } }" if include_comments else ""
-    query = f"""
-    query {{
-        issues(filter: {{ identifier: "{{{identifier}}}" }} first: 1) {{
-            nodes {{
+    issue_fields = f"""
                 id identifier title url
                 state {{ name }}
                 team {{ states {{ nodes {{ id name }} }} }}
                 {comments}
+    """
+
+    identifier_match = re.match(r"^([A-Za-z][A-Za-z0-9_]*)-(\d+)$", identifier)
+    if identifier_match:
+        team_key, issue_number = identifier_match.groups()
+        query = f"""
+        query LinearIssueByKeyAndNumber($teamKey: String!, $issueNumber: Int!) {{
+            issues(filter: {{
+                team: {{ key: {{ eqIgnoreCase: $teamKey }} }}
+                number: {{ eq: $issueNumber }}
+            }} first: 1) {{
+                nodes {{
+{issue_fields}
+                }}
             }}
         }}
-    }}
-    """
-    data = _linear_graphql(query)
-    nodes = data["data"]["issues"]["nodes"]
-    return nodes[0] if nodes else None
+        """
+        data = _linear_graphql(query, {
+            "teamKey": team_key,
+            "issueNumber": int(issue_number),
+        })
+        nodes = data["data"]["issues"]["nodes"]
+        return nodes[0] if nodes else None
+
+    uuid_match = re.match(
+        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        identifier,
+    )
+    if uuid_match:
+        query = f"""
+        query LinearIssueByUuid($id: String!) {{
+            issue(id: $id) {{
+{issue_fields}
+            }}
+        }}
+        """
+        data = _linear_graphql(query, {"id": identifier})
+        return data["data"].get("issue")
+
+    return None
 
 
 def handle_linear_issues(req_id, arguments: dict) -> dict:
@@ -4864,3 +4898,4 @@ def handle_linear_update_issue(req_id, arguments: dict) -> dict:
 
 if __name__ == "__main__":
     main()
+

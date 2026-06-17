@@ -4,7 +4,7 @@ Edgar 的本地 MCP（Model Context Protocol）Server。
 
 讓任何支援 MCP 的 AI（Claude、OpenClaw 等）能透過 HTTP 直接操作本機電腦，包含：檔案系統、Git、系統指令、瀏覽器、Obsidian Vault、Linear、Notion、AI 代理委派、免費圖片生成。
 
-**目前工具數量：56 個**
+**目前工具數量：61 個**（最後校對：2026-06-14）
 
 ---
 
@@ -381,10 +381,10 @@ OpenAI Secure MCP Tunnel 是另一條私有路徑：`tunnel-client` 從本機 ou
 Hermes 這類只會啟動 stdio MCP server 的 client，可改啟動：
 
 ```powershell
-python .\hermes_stdio_proxy.py
+python .\stdio_proxy.py
 ```
 
-預設會轉送到 `http://127.0.0.1:8765/mcp`。如果 HTTP endpoint 不在本機預設位置，可設定 `HERMES_HANDCRAFT_MCP_URL`。
+預設會轉送到 `http://127.0.0.1:8765/mcp`。如果 HTTP endpoint 不在本機預設位置，可設定 `MCP_URL`。
 
 ### Package webhook
 
@@ -412,7 +412,7 @@ https://mcp.whoasked.vip/webhook/linear
 
 這條不是 MCP endpoint。對方要「接 Linear webhook」時給 `/webhook/linear`。
 
-若 endpoint 需要 bearer token，設定 `HERMES_HANDCRAFT_MCP_TOKEN`；本檔不保存 token，也不要把 runtime log、`.screenshots/`、`__pycache__/` 或圖片檔 commit 進 repo。
+若 endpoint 需要 bearer token，設定 `MCP_API_TOKEN`；本檔不保存 token，也不要把 runtime log、`.screenshots/`、`__pycache__/` 或圖片檔 commit 進 repo。
 
 本 repo 內未保留 `gateway.cmd`；目前 HTTP / gateway 相關啟動路徑是 `run_http.cmd` 與 `scripts\Start-HandcraftStack.ps1`，兩者都走 Doppler/env 注入，不需要把 token 當參數傳入。手動探測 `/mcp` 時請使用 `scripts\Invoke-HandcraftMcp.ps1`，避免 `Authorization: Bearer ...` 出現在 shell history 或程序命令列。
 

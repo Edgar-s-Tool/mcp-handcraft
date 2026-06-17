@@ -269,13 +269,13 @@ curl -X POST https://mcp.whoasked.vip/mcp \
 
 ### Hermes stdio proxy
 
-Use `hermes_stdio_proxy.py` when Hermes needs a stdio MCP command but the handcraft MCP service is running through `server_http.py`.
+Use `stdio_proxy.py` when Hermes needs a stdio MCP command but the handcraft MCP service is running through `server_http.py`.
 
 ```powershell
-python .\hermes_stdio_proxy.py
+python .\stdio_proxy.py
 ```
 
-The proxy defaults to `http://127.0.0.1:8765/mcp`; override with `HERMES_HANDCRAFT_MCP_URL` only when needed.
+The proxy defaults to `http://127.0.0.1:8765/mcp`; override with `MCP_URL` only when needed.
 
 ### Webhook URL quick reference
 
@@ -353,7 +353,7 @@ Get-Item .\logs\cache-trace.jsonl | Select-Object FullName,Length,LastWriteTime
 → 把你的 origin 加進 `ALLOWED_HOSTNAMES`。
 
 **Q：curl 回 401 Unauthorized**
-→ 不要把 bearer token 寫在 `curl -H` 命令列。確認 `MCP_API_TOKEN` 或 `HERMES_HANDCRAFT_MCP_TOKEN` 已由 Doppler/env 提供，然後跑：
+→ 不要把 bearer token 寫在 `curl -H` 命令列。確認 `MCP_API_TOKEN` 或 `MCP_API_TOKEN` 已由 Doppler/env 提供，然後跑：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-HandcraftMcp.ps1
