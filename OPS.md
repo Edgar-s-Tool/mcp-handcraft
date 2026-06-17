@@ -35,6 +35,23 @@ Cloudflare Tunnel
 
 ## 2. 啟動 / 停止
 
+> **⚠️ 啟動前必填:`MCP_API_TOKEN`**
+>
+> `run_http.cmd` / `server_http.py` 啟動時會讀 `MCP_API_TOKEN`,**沒設會 fail-fast**,不再使用 repo 內明文 fallback。
+> Token 走 Doppler stdin 或 Web UI 設定,不要寫進命令列或 shell history。
+>
+> 最小啟動範例:
+>
+> ```cmd
+> :: 先確認 Doppler 已設好(handcraft-mcp / prd)
+> doppler secrets get MCP_API_TOKEN --plain
+> :: 啟動(會用 doppler run 自動注入)
+> run_http.cmd
+> ```
+>
+> 缺 token 時 server 印 `MCP_API_TOKEN is required` 後 exit。詳見下方第 4 節「Secrets / Doppler 管理」。
+
+
 ### 啟動 HTTP server（常用）
 ```cmd
 cd C:\Users\EdgarsTool\Projects\mcp-handcraft

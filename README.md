@@ -29,6 +29,24 @@ mcp-handcraft/
 
 ## 啟動方式
 
+> **⚠️ 啟動前必填:`MCP_API_TOKEN`**
+>
+> HTTP server 啟動時會讀 `MCP_API_TOKEN`,**沒設會直接中止**(fail-fast,不做 fallback)。
+> Token 由 Doppler 集中管理,啟動腳本自動注入,不要寫進命令列或 shell history。
+>
+> 最小啟動範例(`run_http.cmd` 自動走這條):
+>
+> ```powershell
+> # 1. 拿 token (需要先 doppler setup --project handcraft-mcp --config prd)
+> $env:MCP_API_TOKEN = doppler secrets get MCP_API_TOKEN --plain
+> # 2. 啟動 server
+> python .\server_http.py
+> # → 監聽 http://127.0.0.1:8765/mcp,POST 要求 Authorization: Bearer <token>
+> ```
+>
+> 缺 token 時 server 會印 `MCP_API_TOKEN is required` 後 exit。
+
+
 ### 一鍵恢復本機 + tunnel + public MCP
 
 ```powershell
