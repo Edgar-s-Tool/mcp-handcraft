@@ -28,11 +28,23 @@ function Invoke-JsonProbe {
 
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -Method $Method -TimeoutSec $TimeoutSec
+        $finalUri = $Uri
+        if ($response.BaseResponse -and $response.BaseResponse.ResponseUri) {
+            $finalUri = $response.BaseResponse.ResponseUri.AbsoluteUri
+        }
+        $detail = $null
+        if ($finalUri -match "cloudflareaccess\.com") {
+            $detail = "cloudflare_access_login"
+        } elseif ([string]$response.Content -match "cloudflareaccess\.com|cf_access") {
+            $detail = "cloudflare_access_login"
+        }
         return [ordered]@{
             name = $Name
             ok = $true
             status = [int]$response.StatusCode
             uri = $Uri
+            final_uri = $finalUri
+            detail = $detail
         }
     } catch {
         $statusCode = $null
@@ -89,7 +101,14 @@ if (-not $SkipPublic) {
     $checks += Invoke-JsonProbe -Name "public_mcp_get" -Uri $PublicMcpUrl
 }
 
-$ok = -not [bool]($checks | Where-Object { -not $_.ok })
+$ok = -not [bool](
+    $checks | Where-Object {
+        if ($_.ok) {
+            return $false
+        }
+        return $_.detail -notin @("cloudflare_access_blocked", "cloudflare_access_login")
+    }
+)
 $result = [ordered]@{
     ok = $ok
     local_base_url = $LocalBaseUrl
