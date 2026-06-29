@@ -1113,6 +1113,18 @@ class ExternalApiIntegrationTests(unittest.TestCase):
         self.assertEqual("review", captured["payload"]["prompt"]["text"])
         self.assertEqual("main", captured["payload"]["repos"][0]["startingRef"])
 
+    def test_cursor_agents_list_parses_v1_items(self):
+        with patch.object(server_http, "_cursor_request", return_value={
+            "items": [
+                {"id": "bc-abc", "name": "【預設】test", "status": "ACTIVE", "url": "https://cursor.com/agents/bc-abc"},
+            ],
+        }):
+            response = server_http.handle_cursor_agents_list(req_id=1, arguments={"limit": 5})
+        self.assertFalse(tool_is_error(response))
+        text = tool_text(response)
+        self.assertIn("bc-abc", text)
+        self.assertIn("【預設】test", text)
+
     def test_factory_computers_list_formats_response(self):
         with patch.object(server_http, "_factory_request", return_value=[
             {"id": "cmp-1", "name": "dev-box", "status": "active"},

@@ -5247,7 +5247,10 @@ def handle_cursor_agents_list(req_id, arguments: dict) -> dict:
     limit = int(arguments.get("limit", 10))
     try:
         data = _cursor_request("GET", "/v1/agents", params={"limit": limit})
-        agents = data.get("agents") if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            agents = data.get("items") or data.get("agents")
+        else:
+            agents = data
         if not isinstance(agents, list):
             agents = []
         if not agents:
