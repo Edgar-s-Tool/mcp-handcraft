@@ -115,21 +115,52 @@ Linear 官方規定：收到 `AgentSessionEvent` 的 `created` 後，**10 秒內
 
 ---
 
+### 4. WSL 搶 localhost:8645（2026-06-30 實際根因）
+
+`healthz` 200 **不代表** 委派 webhook 有到 Windows orchestrator。
+
+若 WSL 裡還跑舊版 `linear-orchestrator`：
+
+- `wslrelay` 佔 `127.0.0.1:8645`
+- tunnel → `localhost:8645` → **WSL 舊版**（可能缺 OAuth webhook secret / 沒 thought ack）
+- Windows 版 log **完全沒有** `AgentSessionEvent` → Linear 顯示 **Did not respond**
+
+修復：停 WSL 舊版、重啟 Windows 版（啟動腳本已自動處理）。
+
+---
+
 ## 你要做的檢查清單（照順序）
 
-### 步驟 1：確認 Linear App 設定
+### 步驟 0：Hermes Agent App ≠ Workspace Webhook（必讀）
 
-打開 [linear.app/settings/api](https://linear.app/settings/api) → **Hermes Agent**：
+Linear 有 **兩套** webhook，容易搞混：
+
+| 設定位置 | 用途 | 委派給 Hermes 需要嗎？ |
+|----------|------|------------------------|
+| **Settings → API → Hermes Agent**（OAuth 應用程式） | Agent Session、OAuth App 事件 | ✅ **必須** |
+| **Settings → Webhooks → linear-orchestrator**（工作區 webhook） | Issue / Comment 一般事件 | ❌ 不能取代上面 |
+
+**委派（Delegate）只會觸發 OAuth App 的 `AgentSessionEvent`**，不會走 workspace webhook。
+
+### 步驟 1：確認 Hermes Agent OAuth App 設定
+
+打開 [linear.app/settings/api](https://linear.app/settings/api) → 點 **Hermes Agent**（OAuth 應用程式那一列，不是下方 Webhooks 區）：
 
 | 欄位 | 應該是 |
 |------|--------|
 | Redirect URI | `https://mcp.edgars.tools/linear/oauth/callback` |
-| Webhook URL | `https://webhooks.edgars.tools/webhooks/linear` |
-| Webhook 已啟用 | ✅ 打開 |
-| Agent session events | ✅ 勾選 |
+| **Webhook URL** | `https://webhooks.edgars.tools/webhooks/linear` |
+| **Webhook 已啟用** | ✅ 打開 |
+| **Agent session events** | ✅ **必須勾選**（沒勾 = 委派永遠 Did not respond） |
 | Scopes | 含 `app:assignable`, `app:mentionable` |
 
-> manifest 檔 `config/linear-oauth-manifest.json` 已同步為 **webhooks.edgars.tools**；Linear 後台 Webhook URL 也要一致。
+**Signing secret（重要）：**
+
+1. 在同一頁複製 Hermes Agent 的 **Signing secret**
+2. 貼到 `C:\Users\EdgarsTool\.hermes\.env` 的 `LINEAR_OAUTH_WEBHOOK_SECRET=...`
+3. Workspace webhook 的 secret 放 `LINEAR_WEBHOOK_SECRET=...`（兩個可能不同，orchestrator 會都試）
+
+> ❌ 不要只改 **Settings → Webhooks → linear-orchestrator** 就以為委派會通。
 
 ### 步驟 2：確認 tunnel + orchestrator 活著
 
@@ -167,8 +198,9 @@ Windows `C:\Users\EdgarsTool\.hermes\.env` 需有（名稱一字不差）：
 ```
 LINEAR_OAUTH_CLIENT_ID=...
 LINEAR_OAUTH_CLIENT_SECRET=...
-LINEAR_WEBHOOK_SECRET=...        # 跟 Linear App 的 Signing secret 相同
-LINEAR_API_KEY=lin_api_...       # 一般 comment 用（非 agent session 時）
+LINEAR_WEBHOOK_SECRET=...              # workspace webhook signing secret
+LINEAR_OAUTH_WEBHOOK_SECRET=...        # Hermes Agent App 頁的 signing secret（委派必備）
+LINEAR_API_KEY=lin_api_...             # 一般 comment 用（非 agent session 時）
 HERMES_PATH=C:\Users\EdgarsTool\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe
 ```
 
