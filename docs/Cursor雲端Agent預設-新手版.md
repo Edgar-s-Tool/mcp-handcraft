@@ -11,7 +11,7 @@
 
 你可以把它想成：**「叫 Cursor 幫你寫程式那類功能」**，但它在 Cursor 的伺服器上跑，不用一直開著你自己的 Cursor 視窗。
 
-我們已用 API 幫你建好 **4 個【預設】助手**，名字都有 `【預設】` 開頭，方便在清單裡認出來。
+我們已用 API 幫你建好 **5 個【預設】助手**，名字都有 `【預設】` 開頭，方便在清單裡認出來。
 
 ---
 
@@ -50,7 +50,7 @@
 
 ---
 
-## 已建好的 4 個【預設】助手
+## 已建好的 5 個【預設】助手
 
 | 名字 | 綁哪個 GitHub 專案 | 白話：平常請它做什麼 |
 |------|-------------------|---------------------|
@@ -58,6 +58,7 @@
 | **【預設】通用 Bug 修復助手** | 同上 mcp-handcraft | 你描述 bug，它幫查、修、跑測試。例：「某個 MCP 工具回錯誤，幫我修」 |
 | **【預設】Agent-KB 知識庫助手** | [Edgar-s-Tool/Agent-KB](https://github.com/Edgar-s-Tool/Agent-KB)（`master`） | 整理筆記、補文件、搜尋主題。例：「幫我把這段整理成一篇 KB 條目」 |
 | **【預設】linear-orchestrator 助手** | [Edgar-s-Tool/linear-orchestrator](https://github.com/Edgar-s-Tool/linear-orchestrator)（`main`） | Linear 任務編排相關。例：「解釋這 repo 怎麼跟 Linear 連動」 |
+| **【預設】Cloudflare 骨架助手** | [Edgar-s-Tool/edgars-cf-workspace](https://github.com/Edgar-s-Tool/edgars-cf-workspace)（`master`） | Workers、wrangler、D1/KV 文件與部署腳本（**不要未確認就 deploy 正式環境**） |
 
 ### 直接連結（點開就能用）
 
@@ -65,19 +66,15 @@
 - [通用 Bug 修復助手](https://cursor.com/agents/bc-4e14fe85-530f-47b5-bf68-6b4c0e94f6e6)
 - [Agent-KB 知識庫助手](https://cursor.com/agents/bc-8792d0c0-ec7e-4bf9-91ec-aee06177df69)
 - [linear-orchestrator 助手](https://cursor.com/agents/bc-bc0d2d33-1a1d-4244-89df-1cbd56045a8a)
+- [Cloudflare 骨架助手](https://cursor.com/agents/bc-887de86e-49b1-4f5e-bf0d-604816986f48)
 
 第一次啟動時，每個助手會先**認識專案、用中文說明能幫什麼**，**不會亂改檔案**（我們有特別這樣下指令）。
 
 ---
 
-## 還沒建：Cloudflare 專用助手
+## Linear OAuth（Hermes Agent）
 
-**edgars-cf-workspace**（Cloudflare Workers 那包）目前**還沒推到 GitHub** 的 Edgar-s-Tool，所以 Cursor 雲端 Agent **還綁不上去**。
-
-等你把 `edgars-cf-workspace` 推到 GitHub（例如 `Edgar-s-Tool/edgars-cf-workspace`）後，可以再建一個：
-
-- 名字建議：`【預設】Cloudflare 骨架助手`
-- 用途：Workers、wrangler、D1/KV 文件與部署腳本（**不要未確認就 deploy 正式環境**）
+Hermes 跟 Linear 的 OAuth 接線說明在 **[Linear-OAuth設定-新手版](./Linear-OAuth設定-新手版.md)**。
 
 ---
 
