@@ -6,6 +6,8 @@ Edgar 的本地 MCP（Model Context Protocol）Server。
 
 **目前工具數量：72 個**（最後校對：2026-06-29）
 
+> 不懂 Doppler 要填什麼？請看 **[Doppler 設定指南（新手版）](docs/DOPPLER-設定指南-新手版.md)**。
+
 ---
 
 ## 架構
