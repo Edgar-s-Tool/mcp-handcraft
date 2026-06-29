@@ -7,6 +7,9 @@
 - POST /mcp
 - POST /webhook/package
 - POST /webhook/linear
+- GET  /linear/oauth/authorize
+- GET  /linear/oauth/callback
+- GET  /linear/oauth/status
 回應模式: 單次 JSON（不開 SSE stream，Phase 2 基礎版）
 """
 
@@ -76,6 +79,23 @@ NOTION_API_KEY      = os.getenv("NOTION_API_KEY", "")
 PERPLEXITY_API_KEY  = os.getenv("PERPLEXITY_API_KEY", "")
 OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY", "")
 LINEAR_API_KEY      = os.getenv("LINEAR_API_KEY", "")
+LINEAR_CLIENT_ID    = os.getenv("LINEAR_CLIENT_ID", "").strip()
+LINEAR_CLIENT_SECRET = os.getenv("LINEAR_CLIENT_SECRET", "").strip()
+LINEAR_WEBHOOK_SECRET = os.getenv("LINEAR_WEBHOOK_SECRET", "").strip()
+LINEAR_OAUTH_SCOPES = os.getenv(
+    "LINEAR_OAUTH_SCOPES",
+    "read,write,app:assignable,app:mentionable",
+).strip()
+LINEAR_OAUTH_CALLBACK_PATH = "/linear/oauth/callback"
+LINEAR_OAUTH_AUTHORIZE_PATH = "/linear/oauth/authorize"
+LINEAR_OAUTH_STATUS_PATH = "/linear/oauth/status"
+LINEAR_OAUTH_TOKEN_FILE = Path(__file__).resolve().parent / "config" / "linear-oauth-token.json"
+LINEAR_OAUTH_REDIRECT_URI = os.getenv(
+    "LINEAR_OAUTH_REDIRECT_URI",
+    "https://mcp.edgars.tools/linear/oauth/callback",
+).strip()
+LINEAR_TOKEN_URL = "https://api.linear.app/oauth/token"
+LINEAR_AUTHORIZE_URL = "https://linear.app/oauth/authorize"
 TRACKTW_API_KEY     = os.getenv("TRACKTW_API_KEY", "")
 WARP_API_KEY        = os.getenv("WARP_API_KEY", "")
 CURSOR_API_KEY      = os.getenv("CURSOR_API_KEY", "")
@@ -2346,6 +2366,178 @@ def handle_discord_webhook_payload(payload: dict) -> tuple[int, dict]:
     }
 
 
+# ─── Linear OAuth (Hermes Agent app) ─────────────────────────────────────────
+
+LINEAR_OAUTH_STATE_LOCK = threading.Lock()
+LINEAR_OAUTH_PENDING_STATES: dict[str, float] = {}
+LINEAR_OAUTH_STATE_TTL_SECONDS = 600
+
+
+def linear_oauth_configured() -> bool:
+    return bool(LINEAR_CLIENT_ID and LINEAR_CLIENT_SECRET)
+
+
+def linear_oauth_token_present() -> bool:
+    token = load_linear_oauth_token()
+    return bool(token and token.get("access_token"))
+
+
+def _prune_linear_oauth_states() -> None:
+    cutoff = time.time() - LINEAR_OAUTH_STATE_TTL_SECONDS
+    with LINEAR_OAUTH_STATE_LOCK:
+        expired = [state for state, created_at in LINEAR_OAUTH_PENDING_STATES.items() if created_at < cutoff]
+        for state in expired:
+            del LINEAR_OAUTH_PENDING_STATES[state]
+
+
+def issue_linear_oauth_state() -> str:
+    _prune_linear_oauth_states()
+    state = secrets.token_urlsafe(24)
+    with LINEAR_OAUTH_STATE_LOCK:
+        LINEAR_OAUTH_PENDING_STATES[state] = time.time()
+    return state
+
+
+def linear_oauth_state_valid(state: str) -> bool:
+    if not state:
+        return False
+    _prune_linear_oauth_states()
+    with LINEAR_OAUTH_STATE_LOCK:
+        created_at = LINEAR_OAUTH_PENDING_STATES.get(state)
+        if created_at is None:
+            return False
+        del LINEAR_OAUTH_PENDING_STATES[state]
+        return created_at >= time.time() - LINEAR_OAUTH_STATE_TTL_SECONDS
+
+
+def save_linear_oauth_token(token_data: dict) -> None:
+    LINEAR_OAUTH_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        **token_data,
+        "saved_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "redirect_uri": LINEAR_OAUTH_REDIRECT_URI,
+        "client_id": LINEAR_CLIENT_ID,
+    }
+    LINEAR_OAUTH_TOKEN_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_linear_oauth_token() -> dict | None:
+    if not LINEAR_OAUTH_TOKEN_FILE.exists():
+        return None
+    try:
+        data = json.loads(LINEAR_OAUTH_TOKEN_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def build_linear_authorize_url(state: str | None = None) -> str:
+    if not linear_oauth_configured():
+        raise RuntimeError("LINEAR_CLIENT_ID and LINEAR_CLIENT_SECRET must be set")
+    oauth_state = state or issue_linear_oauth_state()
+    query = urllib.parse.urlencode({
+        "client_id": LINEAR_CLIENT_ID,
+        "redirect_uri": LINEAR_OAUTH_REDIRECT_URI,
+        "response_type": "code",
+        "scope": LINEAR_OAUTH_SCOPES,
+        "actor": "app",
+        "state": oauth_state,
+    })
+    return f"{LINEAR_AUTHORIZE_URL}?{query}"
+
+
+def exchange_linear_oauth_code(code: str) -> dict:
+    if not linear_oauth_configured():
+        raise RuntimeError("LINEAR_CLIENT_ID and LINEAR_CLIENT_SECRET must be set")
+    body = urllib.parse.urlencode({
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": LINEAR_OAUTH_REDIRECT_URI,
+        "client_id": LINEAR_CLIENT_ID,
+        "client_secret": LINEAR_CLIENT_SECRET,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        LINEAR_TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Linear token exchange failed ({exc.code}): {detail}") from exc
+    if not isinstance(payload, dict) or not payload.get("access_token"):
+        raise RuntimeError("Linear token exchange returned an unexpected payload")
+    return payload
+
+
+def verify_linear_webhook_signature(raw_body: bytes, signature: str) -> bool:
+    if not LINEAR_WEBHOOK_SECRET:
+        return True
+    if not signature:
+        return False
+    expected = hmac.new(
+        LINEAR_WEBHOOK_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def linear_oauth_status_payload() -> dict:
+    token = load_linear_oauth_token() or {}
+    return {
+        "configured": linear_oauth_configured(),
+        "token_present": linear_oauth_token_present(),
+        "redirect_uri": LINEAR_OAUTH_REDIRECT_URI,
+        "authorize_path": LINEAR_OAUTH_AUTHORIZE_PATH,
+        "callback_path": LINEAR_OAUTH_CALLBACK_PATH,
+        "scopes": LINEAR_OAUTH_SCOPES,
+        "webhook_secret_configured": bool(LINEAR_WEBHOOK_SECRET),
+        "saved_at": token.get("saved_at"),
+        "expires_in": token.get("expires_in"),
+        "scope": token.get("scope"),
+    }
+
+
+def handle_linear_oauth_callback(query_string: str) -> tuple[int, str, str]:
+    params = urllib.parse.parse_qs(query_string)
+    error = params.get("error", [""])[0]
+    if error:
+        description = params.get("error_description", [""])[0]
+        return 400, "text/html; charset=utf-8", (
+            "<h1>Linear 授權失敗</h1>"
+            f"<p>{html_escape(error)}: {html_escape(description)}</p>"
+        )
+
+    code = params.get("code", [""])[0]
+    state = params.get("state", [""])[0]
+    if not code:
+        return 400, "text/html; charset=utf-8", "<h1>缺少授權碼</h1><p>Linear 沒有回傳 code。</p>"
+    if state and not linear_oauth_state_valid(state):
+        return 400, "text/html; charset=utf-8", "<h1>state 無效或已過期</h1><p>請重新從授權頁開始。</p>"
+
+    try:
+        token_data = exchange_linear_oauth_code(code)
+        save_linear_oauth_token(token_data)
+    except RuntimeError as exc:
+        return 502, "text/html; charset=utf-8", (
+            "<h1>無法換取 Linear token</h1>"
+            f"<p>{html_escape(str(exc))}</p>"
+        )
+
+    return 200, "text/html; charset=utf-8", (
+        "<h1>Hermes Agent × Linear 授權成功</h1>"
+        "<p>OAuth token 已安全儲存在 MCP server 本機。</p>"
+        "<p>你可以關閉這個分頁。</p>"
+    )
+
+
 # ─── HTTP Handler ─────────────────────────────────────────────────────────────
 
 class MCPHTTPHandler(BaseHTTPRequestHandler):
@@ -2364,6 +2556,12 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             self._handle_authorize(parsed.query)
         elif path == HEALTH_PATH:
             self._handle_health()
+        elif path == LINEAR_OAUTH_AUTHORIZE_PATH:
+            self._handle_linear_oauth_authorize()
+        elif path == LINEAR_OAUTH_CALLBACK_PATH:
+            self._handle_linear_oauth_callback(parsed.query)
+        elif path == LINEAR_OAUTH_STATUS_PATH:
+            self._send_oauth_json(linear_oauth_status_payload())
         elif path == "/mcp":
             body = json.dumps({
                 "server": SERVER_INFO,
@@ -2461,9 +2659,39 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             "webhooks": [
                 PACKAGE_WEBHOOK_PATH,
                 LINEAR_WEBHOOK_PATH,
+                LINEAR_WEBHOOK_PATH_ALIAS,
                 "/webhook/discord",
             ],
+            "linear_oauth": linear_oauth_status_payload(),
         })
+
+    def _handle_linear_oauth_authorize(self) -> None:
+        if not linear_oauth_configured():
+            self._send_oauth_json({
+                "error": "not_configured",
+                "message": "LINEAR_CLIENT_ID and LINEAR_CLIENT_SECRET must be set in Doppler",
+            }, status=503)
+            return
+        try:
+            location = build_linear_authorize_url()
+        except RuntimeError as exc:
+            self._send_oauth_json({"error": "oauth_error", "message": str(exc)}, status=503)
+            return
+        log("Linear OAuth /authorize → redirect to Linear")
+        self.send_response(302)
+        self.send_header("Location", location)
+        self._add_cors_headers()
+        self.end_headers()
+
+    def _handle_linear_oauth_callback(self, query_string: str) -> None:
+        status, content_type, body = handle_linear_oauth_callback(query_string)
+        encoded = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(encoded)))
+        self._add_cors_headers()
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def _handle_authorize(self, query_string: str) -> None:
         params = urllib.parse.parse_qs(query_string)
@@ -2740,7 +2968,19 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(content_length)
         raw_text = raw.decode("utf-8", errors="replace")
-        log(f"LINEAR WEBHOOK RECV ← {raw_text}")
+        signature = self.headers.get("Linear-Signature", "")
+        linear_event = self.headers.get("Linear-Event", "")
+        log(f"LINEAR WEBHOOK RECV ← event={linear_event!r} body={raw_text}")
+
+        if LINEAR_WEBHOOK_SECRET and not verify_linear_webhook_signature(raw, signature):
+            self._send_json(
+                {
+                    **make_webhook_response("linear", accepted=False),
+                    "error": "Invalid Linear-Signature",
+                },
+                status=401,
+            )
+            return
 
         if raw:
             try:
@@ -2848,6 +3088,8 @@ def main() -> None:
     log(f"Endpoint : POST http://localhost:{PORT}{MCP_PATH}")
     log(f"Webhook : POST http://localhost:{PORT}{PACKAGE_WEBHOOK_PATH}")
     log(f"Webhook : POST http://localhost:{PORT}{LINEAR_WEBHOOK_PATH}")
+    log(f"Linear OAuth authorize: GET http://localhost:{PORT}{LINEAR_OAUTH_AUTHORIZE_PATH}")
+    log(f"Linear OAuth callback: GET http://localhost:{PORT}{LINEAR_OAUTH_CALLBACK_PATH}")
     log(f"Allowed origins: {ALLOWED_HOSTNAMES}")
     try:
         server.serve_forever()

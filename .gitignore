@@ -13,4 +13,5 @@ logs/
 *.ico
 # poke-hermes-bridge (not tracked here, lives only locally)
 poke-hermes-bridge/
+config/linear-oauth-token.json
 

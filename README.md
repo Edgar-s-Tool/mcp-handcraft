@@ -494,7 +494,17 @@ http://127.0.0.1:8765/webhook/package
 https://mcp.edgars.tools/webhook/linear
 ```
 
-這條不是 MCP endpoint。對方要「接 Linear webhook」時給 `/webhook/linear`。
+這條不是 MCP endpoint。對方要「接 Linear webhook」時給 `/webhook/linear`（或 `/webhooks/linear`）。
+
+**Hermes Agent × Linear OAuth**（授權機器人帳號，與上面的個人 API Key 不同）：
+
+```text
+https://mcp.edgars.tools/linear/oauth/authorize   ← 開始授權
+https://mcp.edgars.tools/linear/oauth/callback  ← Linear 跳回
+https://mcp.edgars.tools/linear/oauth/status    ← 檢查是否已授權
+```
+
+設定步驟見 `docs/Linear-OAuth設定-新手版.md`；manifest 在 `config/linear-oauth-manifest.json`。
 
 若 endpoint 需要 bearer token，設定 `MCP_API_TOKEN`；本檔不保存 token，也不要把 runtime log、`.screenshots/`、`__pycache__/` 或圖片檔 commit 進 repo。
 

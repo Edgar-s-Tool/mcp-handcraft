@@ -567,6 +567,151 @@ class CacheTraceRotationScriptTests(unittest.TestCase):
             self.assertEqual('{"event":"after-rotation"}\n', log_path.read_text(encoding="utf-8"))
 
 
+class LinearOAuthTests(unittest.TestCase):
+    def setUp(self):
+        with server_http.LINEAR_OAUTH_STATE_LOCK:
+            server_http.LINEAR_OAUTH_PENDING_STATES.clear()
+        self._token_file = server_http.LINEAR_OAUTH_TOKEN_FILE
+        self._saved_token_exists = self._token_file.exists()
+        self._saved_token_contents = (
+            self._token_file.read_text(encoding="utf-8") if self._saved_token_exists else None
+        )
+        if self._token_file.exists():
+            self._token_file.unlink()
+
+    def tearDown(self):
+        if self._token_file.exists():
+            self._token_file.unlink()
+        if self._saved_token_exists and self._saved_token_contents is not None:
+            self._token_file.parent.mkdir(parents=True, exist_ok=True)
+            self._token_file.write_text(self._saved_token_contents, encoding="utf-8")
+
+    def _start_server(self):
+        config = HandcraftServerConfig(
+            mcp_api_token="secret-token",
+            base_url="https://mcp.example.test",
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MCPHTTPHandler, config=config)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, thread, f"http://127.0.0.1:{server.server_address[1]}"
+
+    def test_linear_oauth_status_reports_configuration_flags(self):
+        server, thread, base = self._start_server()
+        try:
+            with patch.object(server_http, "LINEAR_CLIENT_ID", ""), patch.object(
+                server_http, "LINEAR_CLIENT_SECRET", ""
+            ):
+                with urllib.request.urlopen(f"{base}/linear/oauth/status", timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(200, response.status)
+            self.assertFalse(payload["configured"])
+            self.assertFalse(payload["token_present"])
+            self.assertEqual("/linear/oauth/callback", payload["callback_path"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_linear_oauth_authorize_requires_client_credentials(self):
+        server, thread, base = self._start_server()
+        try:
+            with patch.object(server_http, "LINEAR_CLIENT_ID", ""), patch.object(
+                server_http, "LINEAR_CLIENT_SECRET", ""
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(f"{base}/linear/oauth/authorize", timeout=5)
+
+            self.assertEqual(503, raised.exception.code)
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertEqual("not_configured", payload["error"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_linear_oauth_authorize_redirects_to_linear(self):
+        server, thread, base = self._start_server()
+        try:
+            with patch.object(server_http, "LINEAR_CLIENT_ID", "client-1"), patch.object(
+                server_http, "LINEAR_CLIENT_SECRET", "secret-1"
+            ):
+                opener = urllib.request.build_opener(NoRedirectHandler)
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    opener.open(f"{base}/linear/oauth/authorize", timeout=5)
+
+            self.assertEqual(302, raised.exception.code)
+            location = raised.exception.headers["Location"]
+            self.assertTrue(location.startswith("https://linear.app/oauth/authorize?"))
+            self.assertIn("client_id=client-1", location)
+            self.assertIn("actor=app", location)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_linear_oauth_callback_exchanges_code_and_saves_token(self):
+        server, thread, base = self._start_server()
+        try:
+            with patch.object(server_http, "LINEAR_CLIENT_ID", "client-1"), patch.object(
+                server_http, "LINEAR_CLIENT_SECRET", "secret-1"
+            ), patch.object(
+                server_http,
+                "exchange_linear_oauth_code",
+                return_value={
+                    "access_token": "lin_oauth_test_token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "scope": "read write",
+                },
+            ):
+                with urllib.request.urlopen(
+                    f"{base}/linear/oauth/callback?code=test-code",
+                    timeout=5,
+                ) as response:
+                    body = response.read().decode("utf-8")
+
+            self.assertEqual(200, response.status)
+            self.assertIn("授權成功", body)
+            saved = json.loads(server_http.LINEAR_OAUTH_TOKEN_FILE.read_text(encoding="utf-8"))
+            self.assertEqual("lin_oauth_test_token", saved["access_token"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_linear_webhook_rejects_bad_signature_when_secret_configured(self):
+        config = HandcraftServerConfig(
+            mcp_api_token="secret-token",
+            base_url="https://mcp.example.test",
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MCPHTTPHandler, config=config)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            body = json.dumps({"type": "Issue"}).encode("utf-8")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/webhooks/linear",
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Linear-Signature": "bad-signature",
+                },
+                method="POST",
+            )
+            with patch.object(server_http, "LINEAR_WEBHOOK_SECRET", "whsec-test"):
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(req, timeout=5)
+
+            self.assertEqual(401, raised.exception.code)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
 class DiscordWebhookTests(unittest.TestCase):
     def setUp(self):
         with DISCORD_WEBHOOK_EVENTS_LOCK:
@@ -1144,6 +1289,63 @@ class ExternalApiIntegrationTests(unittest.TestCase):
         self.assertIn("rpt-1", tool_text(response))
         mock_request.assert_called_once()
         self.assertEqual(server_http.FACTORY_APP_BASE_URL, mock_request.call_args.kwargs["base_url"])
+
+    def test_linear_oauth_status_when_not_configured(self):
+        with patch.object(server_http, "LINEAR_CLIENT_ID", ""), patch.object(
+            server_http, "LINEAR_CLIENT_SECRET", ""
+        ):
+            payload = server_http.linear_oauth_status_payload()
+        self.assertFalse(payload["configured"])
+        self.assertFalse(payload["token_present"])
+        self.assertEqual(
+            "https://mcp.edgars.tools/linear/oauth/callback",
+            payload["redirect_uri"],
+        )
+
+    def test_linear_oauth_authorize_url_includes_actor_app(self):
+        with patch.object(server_http, "LINEAR_CLIENT_ID", "cid"), patch.object(
+            server_http, "LINEAR_CLIENT_SECRET", "sec"
+        ):
+            url = server_http.build_linear_authorize_url(state="test-state")
+        self.assertIn("linear.app/oauth/authorize", url)
+        self.assertIn("actor=app", url)
+        self.assertIn("state=test-state", url)
+
+    def test_linear_oauth_callback_saves_token(self):
+        token_file = server_http.LINEAR_OAUTH_TOKEN_FILE
+        backup = token_file.read_text(encoding="utf-8") if token_file.exists() else None
+        try:
+            if token_file.exists():
+                token_file.unlink()
+            with patch.object(server_http, "LINEAR_CLIENT_ID", "cid"), patch.object(
+                server_http, "LINEAR_CLIENT_SECRET", "sec"
+            ), patch.object(
+                server_http,
+                "exchange_linear_oauth_code",
+                return_value={"access_token": "tok", "expires_in": 3600, "scope": "read"},
+            ):
+                status, content_type, body = server_http.handle_linear_oauth_callback("code=abc")
+            self.assertEqual(200, status)
+            self.assertIn("text/html", content_type)
+            self.assertIn("授權成功", body)
+            saved = server_http.load_linear_oauth_token()
+            self.assertEqual("tok", saved.get("access_token"))
+        finally:
+            if backup is None:
+                if token_file.exists():
+                    token_file.unlink()
+            else:
+                token_file.write_text(backup, encoding="utf-8")
+
+    def test_verify_linear_webhook_signature(self):
+        secret = "test-secret"
+        body = b'{"type":"Issue"}'
+        sig = server_http.hmac.new(
+            secret.encode("utf-8"), body, server_http.hashlib.sha256
+        ).hexdigest()
+        with patch.object(server_http, "LINEAR_WEBHOOK_SECRET", secret):
+            self.assertTrue(server_http.verify_linear_webhook_signature(body, sig))
+            self.assertFalse(server_http.verify_linear_webhook_signature(body, "bad"))
 
 
 if __name__ == "__main__":

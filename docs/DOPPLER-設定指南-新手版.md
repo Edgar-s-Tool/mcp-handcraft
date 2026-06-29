@@ -59,6 +59,12 @@
 |----------|------------------|
 | `MCP_API_TOKEN` | ✅ 已有（可跳過） |
 | `LINEAR_API_KEY` | ✅ 已有（可跳過） |
+| `LINEAR_CLIENT_ID` | ❌ **Hermes OAuth 要加**（見 [Linear-OAuth設定-新手版](./Linear-OAuth設定-新手版.md)） |
+| `LINEAR_CLIENT_SECRET` | ❌ **Hermes OAuth 要加** |
+| `LINEAR_WEBHOOK_SECRET` | 選填（開 Linear webhook 時再填） |
+| `LINEAR_CLIENT_ID` | ❌ **還沒有，Hermes OAuth 用** |
+| `LINEAR_CLIENT_SECRET` | ❌ **還沒有，Hermes OAuth 用** |
+| `LINEAR_WEBHOOK_SECRET` | ❌ **還沒有，開 webhook 前需要** |
 | `NOTION_API_KEY` | ✅ 已有（可跳過） |
 | `OPENAI_API_KEY` | ✅ 已有（可跳過） |
 | `PERPLEXITY_API_KEY` | ✅ 已有（可跳過） |
@@ -106,6 +112,9 @@
 |---------------------|----------|------------------------|------------|--------|
 | `PERPLEXITY_API_KEY` | 網路搜尋工具 `web_search` | `pplx-1234567890abcdefghijklmnopqrstuvwxyz` | 1. [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)<br>2. 按 **Generate API Key**<br>3. 複製 | 選填 ✅ 已有 |
 | `LINEAR_API_KEY` | Linear 任務管理（開 issue、改狀態） | `lin_api_1234567890abcdefghijklmnopqrstuvwxyz` | 1. [linear.app/settings/api](https://linear.app/settings/api)<br>2. 按 **Create key**<br>3. 勾需要的權限 → **Create**<br>4. 複製 | 選填 ✅ 已有 |
+| `LINEAR_CLIENT_ID` | Hermes Agent 的 Linear OAuth 應用 ID | `abc123def456` | 1. [linear.app/settings/api/applications/new](https://linear.app/settings/api/applications/new)<br>2. 建立 **Hermes Agent** 應用（或匯入 `config/linear-oauth-manifest.json`）<br>3. 複製 **Client ID** | 選填 ❌ **OAuth 用，目前缺** |
+| `LINEAR_CLIENT_SECRET` | Hermes Agent OAuth 密鑰 | `secret_abcdef1234567890` | 同上，建立應用時複製 **Client Secret**（只顯示一次） | 選填 ❌ **OAuth 用，目前缺** |
+| `LINEAR_WEBHOOK_SECRET` | 驗證 Linear webhook 簽章 | `whsec_abcdef1234567890` | Linear 應用設定頁的 **Webhook signing secret** | 選填 ❌ **開 webhook 前需要** |
 | `NOTION_API_KEY` | 讀 Notion 頁面、搜尋 | `secret_1234567890abcdefghijklmnopqrstuvwxyz` | 1. [notion.so/my-integrations](https://www.notion.so/my-integrations)<br>2. **+ New integration**<br>3. 取名 → **Submit**<br>4. 複製 **Internal Integration Secret**<br>5. 到 Notion 各頁面按 **⋯ → Connections** 連結這個 integration | 選填 ✅ 已有 |
 | `OPENAI_API_KEY` | 備用 AI（少數功能） | `sk-proj-1234567890abcdefghijklmnopqrstuvwxyz` | 1. [platform.openai.com/api-keys](https://platform.openai.com/api-keys)<br>2. **+ Create new secret key**<br>3. 複製 | 選填 ✅ 已有 |
 | `TRACKTW_API_KEY` | 查台灣物流（黑貓、7-11 等） | `ttw_1234567890abcdefghijklmnopqrstuvwxyz` | 1. 打開 [track.tw](https://track.tw)<br>2. 登入 → 帳號 / API 設定<br>3. 產生 API Key 並複製 | 選填 ✅ 已有 |
