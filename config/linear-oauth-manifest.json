@@ -18,8 +18,8 @@
     ]
   },
   "webhook": {
-    "url": "https://webhook.edgars.tools/webhooks/linear",
-    "enabled": false,
+    "url": "https://webhook.whoasked.vip/webhooks/linear",
+    "enabled": true,
     "resourceTypes": [
       "Issue",
       "Comment",
@@ -37,7 +37,8 @@
     "oauth_authorize_entry": "https://mcp.edgars.tools/linear/oauth/authorize",
     "oauth_bootstrap_entry": "https://mcp.edgars.tools/linear/oauth/bootstrap",
     "oauth_status_check": "https://mcp.edgars.tools/linear/oauth/status",
-    "webhook_phase1_alternate": "Hermes gateway currently uses webhook.whoasked.vip via cloudflared tunnel (see cloudflared/HERMES-WEBHOOK.md). webhook.edgars.tools is the manifest target for future Cloudflare Worker routing.",
+    "webhook_phase1_alternate": "Production webhook URL is webhook.whoasked.vip (cloudflared tunnel → linear-orchestrator :8645). webhook.edgars.tools is a future Cloudflare Worker target (edgars-hooks skeleton only stores events).",
+    "webhook_requirements": "Agent session events MUST be enabled. Backend must emit agentActivityCreate thought within 10s — see docs/Linear-Agent人類委派-新手版.md",
     "doppler_project": "handcraft-mcp",
     "doppler_config": "prd"
   }
