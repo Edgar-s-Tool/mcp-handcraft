@@ -21,7 +21,7 @@ Linear 有一種 **OAuth App**（授權應用程式），讓 Hermes 可以：
 | `https://mcp.edgars.tools/linear/oauth/status` | 檢查有沒有接成功（看 JSON） |
 
 Webhook（事件通知）在 manifest 裡是 **關閉的**（`enabled: false`）。  
-目前 Hermes 實際收 webhook 走的是 **webhook.whoasked.vip**（本機 tunnel），不是 `webhook.edgars.tools`。之後要換再說。
+目前 Hermes 實際收 webhook 走的是 **webhooks.edgars.tools**（本機 tunnel → Windows `:8645`）。
 
 ---
 
@@ -141,8 +141,8 @@ Webhook **先不要開**（manifest 裡 `enabled: false`）。要開時再跟 AI
 **Q：callback 說 state 無效？**  
 → 授權連結過期（10 分鐘）。重新從 `/linear/oauth/authorize` 開始。
 
-**Q：webhook.edgars.tools 跟 webhook.whoasked.vip 差在哪？**  
-→ manifest 寫的是 `webhook.edgars.tools`（未來 Cloudflare）。現在 Hermes 實際跑在 `webhook.whoasked.vip` + 本機 tunnel。
+**Q：webhooks.edgars.tools 跟 mcp.edgars.tools/webhook/linear 差在哪？**  
+→ **webhooks.edgars.tools** 是 Hermes Agent 正式 webhook（tunnel → linear-orchestrator）。**mcp.edgars.tools/webhook/linear** 只記 log，不會回 Linear。
 
 **Q：我要開 webhook 怎麼辦？**  
 → 先確認 Hermes gateway 在跑，再跟 AI 說「要開 Linear webhook」；會另外給你步驟，不會偷偷改 production。

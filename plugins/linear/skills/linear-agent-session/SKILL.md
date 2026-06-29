@@ -41,7 +41,7 @@ Linear docs: https://linear.app/developers/agent-interaction
 ## Our Stack
 
 ```
-Linear → webhook.whoasked.vip/webhooks/linear
+Linear → webhooks.edgars.tools/webhooks/linear
       → linear-orchestrator (:8645)
       → hermes -z --cli --continue <session> --skills linear
       → agentActivityCreate (thought + response)
@@ -62,7 +62,7 @@ When processing an `AgentSessionEvent`:
 
 ## Debugging Checklist
 
-1. Webhook URL live? (`webhook.whoasked.vip`, not `webhook.edgars.tools`)
+1. Webhook URL live? (`webhooks.edgars.tools/webhooks/linear`, not `mcp.edgars.tools/webhook/linear`)
 2. `linear-orchestrator` running? (`systemctl status`, `:8645/healthz`)
 3. `LINEAR_OAUTH_CLIENT_ID/SECRET` set for writeback?
 4. `LINEAR_WEBHOOK_SECRET` matches Linear app signing secret?

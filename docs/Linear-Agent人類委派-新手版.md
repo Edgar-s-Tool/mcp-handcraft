@@ -54,7 +54,7 @@ Linear 的「Agent」不是普通機器人帳號。你把 issue 委派給 Hermes
 Linear 送 AgentSessionEvent webhook
         │
         ▼
-https://webhook.whoasked.vip/webhooks/linear   ← 公開入口（Cloudflare Tunnel）
+https://webhooks.edgars.tools/webhooks/linear   ← 公開入口（Cloudflare Tunnel）
         │
         ▼
 linear-orchestrator（Windows，port 8645）            ← 中介層（必須在跑）
@@ -74,7 +74,7 @@ Linear 顯示 Hermes 有回應（不再是 Did not respond）
 | **OAuth** | `mcp.edgars.tools/linear/oauth/*` | ✅ 已通（EDG-285） | 只解決「有權限」，不解決 webhook |
 | **mcp-handcraft webhook** | `mcp.edgars.tools/webhook/linear` | ⚠️ 只收 log，**不會回 Linear** | ❌ |
 | **edgars-hooks Worker** | `hooks.whoasked.vip` | ⚠️ 骨架，只存 R2/D1 | ❌ |
-| **webhook.edgars.tools** | manifest 目標 URL | ❌ 尚未上線 | ❌ |
+| **webhooks.edgars.tools** | tunnel → `:8645` | ✅ 正式 Hermes webhook 入口 | ✅（若 tunnel + service 正常） |
 | **linear-orchestrator** | Windows `:8645` + tunnel | ✅ 正確實作（需確認有在跑） | ✅（若 tunnel + service 正常） |
 
 > **結論**：OAuth 成功 ≠ 委派成功。必須走 **linear-orchestrator** 這條路。
@@ -87,7 +87,7 @@ Linear 顯示 Hermes 有回應（不再是 Did not respond）
 
 ### 1. Webhook 沒送到能處理的地方
 
-- Linear App 設定的 Webhook URL 指到 **沒在跑的網址**（例如 `webhook.edgars.tools`）
+- Linear App 設定的 Webhook URL 指到 **沒在跑的網址**（例如舊的 `webhook.whoasked.vip`）
 - 或指到 **mcp-handcraft**（只 ack、不寫回 Linear）
 - 或 **cloudflared tunnel 沒跑 / 指錯 port** → 502/530
 
@@ -124,12 +124,12 @@ Linear 官方規定：收到 `AgentSessionEvent` 的 `created` 後，**10 秒內
 | 欄位 | 應該是 |
 |------|--------|
 | Redirect URI | `https://mcp.edgars.tools/linear/oauth/callback` |
-| Webhook URL | `https://webhook.whoasked.vip/webhooks/linear` |
+| Webhook URL | `https://webhooks.edgars.tools/webhooks/linear` |
 | Webhook 已啟用 | ✅ 打開 |
 | Agent session events | ✅ 勾選 |
 | Scopes | 含 `app:assignable`, `app:mentionable` |
 
-> manifest 檔 `config/linear-oauth-manifest.json` 裡 webhook 仍是 `enabled: false`、URL 指 `webhook.edgars.tools`——那是**文件草稿**，Linear 後台要以 **whoasked.vip** 為準。
+> manifest 檔 `config/linear-oauth-manifest.json` 已同步為 **webhooks.edgars.tools**；Linear 後台 Webhook URL 也要一致。
 
 ### 步驟 2：確認 tunnel + orchestrator 活著
 
@@ -149,10 +149,10 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8645/healthz" -UseBasicParsing
 公網（tunnel 修好後）：
 
 ```powershell
-Invoke-WebRequest -Uri "https://webhook.whoasked.vip/healthz" -UseBasicParsing
+Invoke-WebRequest -Uri "https://webhooks.edgars.tools/healthz" -UseBasicParsing
 ```
 
-若公網 530/502：到 Cloudflare Dashboard 把 `webhook.whoasked.vip` 改成 **`http://localhost:8645`**（見下方 tunnel 一行的設定）。
+若公網 530/502：到 Cloudflare Dashboard 把 **webhooks.edgars.tools** 指到 **`http://localhost:8645`**（見下方 tunnel 設定）。
 
 若本機 FAIL：先啟動 orchestrator：
 
@@ -223,8 +223,8 @@ orchestrator 叫 Hermes 時會加 `--skills linear`，載入 Linear 相關 skill
 **Q：OAuth status 顯示 OK，為什麼委派還是 Did not respond？**  
 → OAuth 只驗「App 已安裝」。委派還需要 webhook 送達 + 10 秒 thought + response。
 
-**Q：webhook.edgars.tools 跟 webhook.whoasked.vip 差在哪？**  
-→ `webhook.edgars.tools` 是未來 Cloudflare Worker 目標，**現在還沒上線**。現用 `webhook.whoasked.vip` + tunnel。
+**Q：webhooks.edgars.tools 跟 mcp.edgars.tools/webhook/linear 差在哪？**  
+→ **webhooks.edgars.tools** 走 tunnel → linear-orchestrator，會在 10 秒內回 thought。**mcp.edgars.tools/webhook/linear** 只記 log，不能當 Agent webhook。
 
 **Q：hooks.whoasked.vip 可以嗎？**  
 → 那是 `edgars-hooks` Worker 骨架，**只存事件、不會叫 Hermes**。不能當 Agent webhook 終點。
@@ -239,22 +239,29 @@ orchestrator 叫 Hermes 時會加 `--skills linear`，載入 Linear 相關 skill
 
 ## 給 AI 的修復優先順序
 
-1. Linear App webhook → `https://webhook.whoasked.vip/webhooks/linear` + 啟用 Agent session events  
+1. Linear App webhook → `https://webhooks.edgars.tools/webhooks/linear` + 啟用 Agent session events  
 2. Windows `linear-orchestrator` running + OAuth env 齊  
 3. cloudflared tunnel 指到 **Windows `http://localhost:8645`**  
 4. 確認 thought ack（10 秒規則）  
 5. Hermes 桌面版 CLI + `linear` skill 可跑  
-6. （未來）`webhook.edgars.tools` Worker 上線後再遷移
+6. 舊 `webhook.whoasked.vip` tunnel 路由可刪除（已遷移）
 
 ---
 
-## Cloudflare Tunnel 一行設定
+## Cloudflare Tunnel 設定（webhooks.edgars.tools）
 
-Dashboard → **edgar-local-01-tunnel** → Public Hostname **`webhook.whoasked.vip`**：
+Dashboard → **edgar-local-01-tunnel** → **Add a public hostname**（或編輯既有）：
 
-```
-http://localhost:8645
-```
+| 欄位 | 值 |
+|------|-----|
+| **Subdomain** | `webhooks` |
+| **Domain** | `edgars.tools` |
+| **Service type** | HTTP |
+| **URL** | `http://localhost:8645` |
+
+DNS 會自動建立 CNAME（同 **mcp.edgars.tools** 模式，指向 `*.cfargotunnel.com`）。勿手動 A 到 `127.0.0.1`。
+
+驗證：`https://webhooks.edgars.tools/healthz` 應回 200。
 
 ---
 
