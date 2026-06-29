@@ -20,14 +20,21 @@ mcp-handcraft/
 ├── run.cmd             ← 啟動 stdio server
 ├── run_http.cmd        ← 啟動 HTTP server（透過 Doppler 注入 secrets）
 ├── run_stdio.cmd       ← 啟動 stdio proxy（Cursor / Hermes → 本機 HTTP MCP）
+├── cloudflare/
+│   └── workers/        ← hooks/status Worker 的 source-of-truth
+├── config/
+│   ├── mcp.local.example.json
+│   ├── mcp.remote.example.json
+│   └── mcp.remote.stdio.example.json
+├── docs/
+│   ├── DOPPLER-設定指南-新手版.md
+│   └── MCP-CLIENT-AUTH-最小正式方案.md
 ├── scripts/
 │   ├── start-mcp.ps1 ← 開啟：背景啟動 HTTP + 可選 cloudflared（寫 PID）
 │   ├── check-mcp.ps1 ← 檢驗：本機 / 外網 / MCP handshake
 │   ├── maintain-mcp.ps1 ← 維護：日誌輪替、健康修復、可選 smoke test
 │   ├── stop-mcp.ps1 ← 停止 HTTP（可選 cloudflared）
 │   ├── Start-HandcraftStack.ps1 ← 舊版一鍵啟動（仍可用）
-│   ├── Start-OpenAISecureMcpTunnel.ps1 ← 啟動 OpenAI Secure MCP Tunnel
-│   ├── Install-OpenAITunnelClient.ps1 ← 安裝 OpenAI tunnel-client
 │   └── Test-HandcraftHealth.ps1 ← 輕量健康檢查（check-mcp 會涵蓋更多）
 └── test_server_http.py ← smoke test
 ```
@@ -83,23 +90,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-HandcraftSta
 
 ### 啟動 OpenAI Secure MCP Tunnel（私有 MCP，不開公開入口）
 
+> 注意：本 repo 目前**沒有**保留 `Start-OpenAISecureMcpTunnel.ps1` / `Install-OpenAITunnelClient.ps1`。  
+> 若之後要恢復這條路徑，請先把對應腳本重新納入 repo，再更新本段操作說明。
+
 OpenAI Secure MCP Tunnel 會讓本機 `tunnel-client` 對 OpenAI 建立 outbound HTTPS 連線，再把 OpenAI 端的 MCP JSON-RPC 請求轉發到本機 `http://127.0.0.1:8765/mcp`。這條路徑不需要把本機 MCP server 暴露到 public internet。
 
 先在 OpenAI Platform tunnel settings 建立 / 選取 tunnel，取得 `tunnel_id`，並準備一把具備 Tunnels Read + Use 權限的 runtime API key。不要把 key 寫進 repo 或命令列歷史。
 
 ```powershell
-cd C:\Users\EdgarsTool\Projects\mcp-handcraft
-$env:OPENAI_MCP_TUNNEL_ID = "tunnel_..."
-$env:CONTROL_PLANE_API_KEY = "sk-..."
-$env:MCP_API_TOKEN = "<local-mcp-bearer-token>"
-
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-OpenAISecureMcpTunnel.ps1 -InstallIfMissing
+# 目前僅保留概念說明；腳本檔未納入此 repo snapshot
 ```
 
 只跑診斷、不啟動長跑 tunnel：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-OpenAISecureMcpTunnel.ps1 -DoctorOnly
+# 目前僅保留概念說明；腳本檔未納入此 repo snapshot
 ```
 
 這個腳本會確認本機 `:8765` 健康，必要時透過 Doppler 啟動 `server_http.py`，再用 `sample_mcp_remote_no_auth` profile 執行 `tunnel-client init`、`doctor` 和 `run`。本機 MCP bearer 會透過 `Authorization: env:MCP_API_TOKEN` 這類 env reference 傳給 `tunnel-client`，不寫入 profile。保持該 process 運作時，ChatGPT / Codex / API 端才可透過 tunnel 呼叫本機 MCP。
@@ -144,7 +149,7 @@ Stop-Process -Id <OwningProcessId> -Force
 | Claude Code | `winget install Anthropic.ClaudeCode` + `claude auth login` |
 | Ollama | 本地模型執行環境 |
 | mmx CLI | MiniMax 媒體生成 |
-| OpenAI tunnel-client | OpenAI Secure MCP Tunnel 用；可由 `scripts\Install-OpenAITunnelClient.ps1` 安裝 |
+| OpenAI tunnel-client | OpenAI Secure MCP Tunnel 用；本 repo snapshot 未附安裝腳本 |
 
 ---
 

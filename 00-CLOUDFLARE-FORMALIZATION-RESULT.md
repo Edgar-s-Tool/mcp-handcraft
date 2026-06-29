@@ -8,6 +8,27 @@ Date: 2026-06-29T20:55:00Z
 - Verify live MCP auth posture and recommend client auth strategy.
 - Formalize status worker source for live status rendering.
 
+## Post-check update (after Cloudflare dashboard changes)
+
+The earlier blockers around edge challenge were later rechecked through dashboard-assisted verification.
+
+Current known state:
+
+- WAF custom rule `Skip Bot Fight Mode for API endpoints` is deployed at top priority.
+- Access app `edgar-mcp-local` now exists as a self-hosted app for `mcp.edgars.tools`.
+- Managed OAuth is enabled on that Access app.
+- `hooks.edgars.tools/health` is now confirmed 200 from browser-assisted verification.
+- `hooks.edgars.tools/test` is now confirmed 200 from browser-assisted verification.
+- `status.edgars.tools/` is now confirmed 200 from browser-assisted verification.
+- `mcp.edgars.tools/mcp` now reaches the Access login flow instead of being stopped by Bot Fight first.
+- `status.edgars.tools` reports `mcp external: protected · 401 (expected)`.
+
+What this means:
+
+- The earlier `403 cf-mitigated: challenge` problem was caused by zone-wide Bot Fight Mode, not by the MCP app itself.
+- That edge blocker has been removed for the required API/status paths.
+- Cloudflare Access is now the effective public protection layer for `mcp.edgars.tools`.
+
 ## Output path note
 
 - Requested output path: `V:\00-CLOUDFLARE-FORMALIZATION-RESULT.md`
