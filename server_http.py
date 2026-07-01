@@ -1431,7 +1431,14 @@ TOOLS = [_normalize_tool_descriptor(tool) for tool in TOOLS]
 # ── Origin 白名單（防 DNS rebinding，spec 強制要求）────────────────────────────
 # 允許 localhost / 127.0.0.1 任意 port，供本地開發 + MCP Inspector 使用。
 # Cloudflare Tunnel 接入後，瀏覽器 origin 會是 tunnel domain，需另行加入。
-ALLOWED_HOSTNAMES = {"localhost", "127.0.0.1", "mcp.whoasked.vip", "mcp.edgars.tools"}
+ALLOWED_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "mcp.whoasked.vip",
+    "mcp.edgars.tools",
+    "chatgpt.com",
+    "chat.openai.com",
+}
 
 
 # ─── 共用工具 ─────────────────────────────────────────────────────────────────
@@ -1590,6 +1597,20 @@ def parse_basic_client_credentials(auth_header: str) -> tuple[str, str] | None:
     if not sep:
         return None
     return urllib.parse.unquote_plus(client_id), urllib.parse.unquote_plus(client_secret)
+
+
+def oauth_token_exchange_skips_client_secret(
+    client: dict,
+    params: dict,
+    *,
+    code_entry: dict | None,
+) -> bool:
+    """Public/PKCE token exchanges may omit client_secret (auth method 'none')."""
+    if params.get("code_verifier"):
+        return True
+    if code_entry and code_entry.get("code_challenge"):
+        return True
+    return False
 
 
 def oauth_client_secret_matches(client: dict, params: dict, auth_header: str) -> bool:
@@ -2846,6 +2867,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             "response_types_supported": ["code"],
             "grant_types_supported": ["authorization_code"],
             "code_challenge_methods_supported": ["S256"],
+            "client_id_metadata_document_supported": True,
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic", "none"],
             "token_endpoint_auth_signing_alg_values_supported": [],
             "revocation_endpoint_auth_methods_supported": ["none"],
@@ -2994,6 +3016,13 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         self._add_cors_headers()
         self.end_headers()
 
+    def _log_token_failure(self, error: str, description: str = "", *, client_id: str = "") -> None:
+        label = client_id or "?"
+        if description:
+            log(f"OAuth /token failed: {error} — {description} (client_id={label})")
+        else:
+            log(f"OAuth /token failed: {error} (client_id={label})")
+
     def _handle_token(self) -> None:
         content_length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(content_length) if content_length > 0 else b""
@@ -3001,6 +3030,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
 
         grant_type = params.get("grant_type", "")
         if grant_type != "authorization_code":
+            self._log_token_failure("unsupported_grant_type")
             self._send_oauth_json({"error": "unsupported_grant_type"}, 400)
             return
 
@@ -3014,26 +3044,42 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             client_id = basic_credentials[0]
         client = get_oauth_client(client_id)
         if not client:
+            self._log_token_failure("invalid_client", client_id=client_id)
             self._send_oauth_json({"error": "invalid_client"}, 401)
             return
-        if not oauth_client_secret_matches(client, params, self.headers.get("Authorization", "")):
+
+        with OAUTH_CODES_LOCK:
+            pending_entry = OAUTH_CODES.get(code)
+
+        skip_secret = oauth_token_exchange_skips_client_secret(
+            client,
+            params,
+            code_entry=pending_entry,
+        )
+        if not skip_secret and not oauth_client_secret_matches(client, params, self.headers.get("Authorization", "")):
+            self._log_token_failure("invalid_client", "client_secret mismatch", client_id=client_id)
             self._send_oauth_json({"error": "invalid_client", "error_description": "client_secret mismatch"}, 401)
             return
         with OAUTH_CODES_LOCK:
             entry = OAUTH_CODES.get(code)
             if not entry or entry.get("used"):
+                self._log_token_failure("invalid_grant", client_id=client_id)
                 self._send_oauth_json({"error": "invalid_grant"}, 400)
                 return
             if time.time() - entry["created_at"] > OAUTH_AUTH_CODE_TTL_SECONDS:
+                self._log_token_failure("invalid_grant", "code expired", client_id=client_id)
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "code expired"}, 400)
                 return
             if client_id != entry.get("client_id"):
+                self._log_token_failure("invalid_grant", "client_id mismatch", client_id=client_id)
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "client_id mismatch"}, 400)
                 return
             if redirect_uri != entry.get("redirect_uri"):
+                self._log_token_failure("invalid_grant", "redirect_uri mismatch", client_id=client_id)
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "redirect_uri mismatch"}, 400)
                 return
             if entry.get("resource") and resource and resource != entry.get("resource"):
+                self._log_token_failure("invalid_grant", "resource mismatch", client_id=client_id)
                 self._send_oauth_json({"error": "invalid_grant", "error_description": "resource mismatch"}, 400)
                 return
             if entry.get("code_challenge"):
@@ -3042,13 +3088,14 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                     entry.get("code_challenge", ""),
                     entry.get("code_challenge_method", ""),
                 ):
+                    self._log_token_failure("invalid_grant", "PKCE verification failed", client_id=client_id)
                     self._send_oauth_json({"error": "invalid_grant", "error_description": "PKCE verification failed"}, 400)
                     return
             entry["used"] = True
             scope = entry.get("scope", OAUTH_SCOPE)
 
         access_token, expires_in = issue_oauth_access_token(client_id, scope)
-        log("OAuth /token → issued access_token")
+        log(f"OAuth /token → issued access_token (client_id={client_id})")
         self._send_oauth_json({
             "access_token": access_token,
             "token_type": "Bearer",

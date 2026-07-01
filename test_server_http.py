@@ -259,6 +259,7 @@ class OAuthFlowTests(unittest.TestCase):
 
             self.assertEqual(["authorization_code"], metadata["grant_types_supported"])
             self.assertEqual(["S256"], metadata["code_challenge_methods_supported"])
+            self.assertTrue(metadata["client_id_metadata_document_supported"])
             self.assertIn("client_secret_post", metadata["token_endpoint_auth_methods_supported"])
             self.assertIn("client_secret_basic", metadata["token_endpoint_auth_methods_supported"])
             self.assertIn("none", metadata["token_endpoint_auth_methods_supported"])
@@ -479,6 +480,57 @@ class OAuthFlowTests(unittest.TestCase):
                 "code": code,
                 "resource": "https://mcp.example.test/mcp",
                 "client_secret": client_secret,
+            }).encode("utf-8")
+            token_req = urllib.request.Request(
+                f"{base}/token",
+                data=token_body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urllib.request.urlopen(token_req, timeout=5) as response:
+                token_payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual("Bearer", token_payload["token_type"])
+            self.assertEqual("mcp", token_payload["scope"])
+            self.assertTrue(token_payload["access_token"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_static_handcraft_client_pkce_allows_missing_client_secret(self):
+        server, thread, base = self._start_server()
+        try:
+            redirect_uri = "https://chatgpt.com/connector/oauth/callback"
+            client_id = server_http.OAUTH_STATIC_CLIENT_ID
+            verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+            challenge = server_http.pkce_s256_challenge(verifier)
+            authorize_query = urllib.parse.urlencode({
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": "mcp",
+                "resource": "https://mcp.example.test",
+                "state": "chatgpt-state",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            })
+            opener = urllib.request.build_opener(NoRedirectHandler)
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                opener.open(f"{base}/authorize?{authorize_query}", timeout=5)
+            self.assertEqual(302, raised.exception.code)
+            redirected_query = urllib.parse.parse_qs(
+                urllib.parse.urlparse(raised.exception.headers["Location"]).query
+            )
+            code = redirected_query["code"][0]
+
+            token_body = urllib.parse.urlencode({
+                "grant_type": "authorization_code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code": code,
+                "code_verifier": verifier,
+                "resource": "https://mcp.example.test",
             }).encode("utf-8")
             token_req = urllib.request.Request(
                 f"{base}/token",
