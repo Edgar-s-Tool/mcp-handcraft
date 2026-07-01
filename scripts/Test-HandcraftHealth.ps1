@@ -51,6 +51,7 @@ function Invoke-JsonProbe {
         $detail = $null
         if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
             $statusCode = [int]$_.Exception.Response.StatusCode
+            $cfMitigated = $_.Exception.Response.Headers["cf-mitigated"]
             try {
                 $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
                 $body = $reader.ReadToEnd()
@@ -61,6 +62,9 @@ function Invoke-JsonProbe {
                 }
             } catch {
                 $detail = $null
+            }
+            if (-not $detail -and $cfMitigated -eq "challenge") {
+                $detail = "cloudflare_edge_challenge"
             }
         }
         return [ordered]@{
@@ -101,7 +105,7 @@ if (-not $SkipPublic) {
     if ($publicHealth.ok -and $publicHealth.detail -eq "cloudflare_access_login") {
         $publicHealth.note = "reachable_access_protected"
     }
-    if (-not $publicHealth.ok -and $publicHealth.status -in @(302, 401, 403, 405)) {
+    if (-not $publicHealth.ok -and $publicHealth.status -in @(302, 401, 405)) {
         $publicHealth.ok = $true
         $publicHealth.note = "reachable_auth_required"
     }
@@ -111,7 +115,7 @@ if (-not $SkipPublic) {
     if ($publicMcp.ok -and $publicMcp.detail -eq "cloudflare_access_login") {
         $publicMcp.note = "reachable_access_protected"
     }
-    if (-not $publicMcp.ok -and $publicMcp.status -in @(302, 401, 403, 405)) {
+    if (-not $publicMcp.ok -and $publicMcp.status -in @(302, 401, 405)) {
         $publicMcp.ok = $true
         $publicMcp.note = "reachable_auth_required"
     }
