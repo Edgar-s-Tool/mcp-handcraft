@@ -1,0 +1,9 @@
+{
+  "access_token": "lin_oauth_example_replace_after_authorization",
+  "token_type": "Bearer",
+  "expires_in": 315705599,
+  "scope": "read write app:assignable app:mentionable",
+  "saved_at": "2026-06-30T00:00:00+00:00",
+  "redirect_uri": "https://mcp.edgars.tools/linear/oauth/callback",
+  "client_id": "your-linear-client-id"
+}

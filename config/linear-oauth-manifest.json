@@ -1,0 +1,45 @@
+{
+  "display": {
+    "name": "Hermes Agent",
+    "description": "Hermes Linear agent app for delegated issue work and Agent Session events."
+  },
+  "developer": {
+    "name": "Edgar AI Guild"
+  },
+  "oauth": {
+    "client_name": "Hermes Agent",
+    "client_uri": "https://github.com/Edgars-tool/hermes-agent",
+    "redirect_uris": [
+      "https://mcp.edgars.tools/linear/oauth/callback"
+    ],
+    "grant_types": [
+      "authorization_code",
+      "client_credentials"
+    ]
+  },
+  "webhook": {
+    "url": "https://webhooks.edgars.tools/webhooks/linear",
+    "enabled": true,
+    "resourceTypes": [
+      "Issue",
+      "Comment",
+      "AgentSessionEvent",
+      "AppUserNotification",
+      "Reaction",
+      "Project",
+      "Cycle",
+      "Label",
+      "User"
+    ]
+  },
+  "notes": {
+    "oauth_callback_host": "mcp.edgars.tools",
+    "oauth_authorize_entry": "https://mcp.edgars.tools/linear/oauth/authorize",
+    "oauth_bootstrap_entry": "https://mcp.edgars.tools/linear/oauth/bootstrap",
+    "oauth_status_check": "https://mcp.edgars.tools/linear/oauth/status",
+    "webhook_phase1_alternate": "Production webhook URL is webhooks.edgars.tools (cloudflared tunnel edgar-local-01-tunnel → Windows localhost:8645 → linear-orchestrator). hooks.whoasked.vip / edgars-hooks Worker is skeleton-only (stores events, does not run Hermes).",
+    "webhook_requirements": "Agent session events MUST be enabled. Backend must emit agentActivityCreate thought within 10s — see docs/Linear-Agent人類委派-新手版.md",
+    "doppler_project": "handcraft-mcp",
+    "doppler_config": "prd"
+  }
+}
